@@ -1,4 +1,4 @@
-/** Local dev hits API directly; deployed app uses same-origin /v1 (server proxy). */
+/** Never use process.env here — it gets baked into the client bundle at build time. */
 function getApiBaseUrl(): string {
   if (typeof window === "undefined") {
     return "";
