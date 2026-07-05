@@ -1,11 +1,12 @@
 # Deployment Guide
 
-Get X-Autopilot live on the internet. Two supported paths:
+Get X-Autopilot live on the internet.
 
-| Path | Best for | Time | Cost |
-|------|----------|------|------|
-| **[A) Render](#path-a-render-recommended)** | Fastest live deploy, minimal ops | ~30 min | ~$7–25/mo |
-| **[B) VPS + Docker](#path-b-vps--docker)** | Full control, one server | ~1 hr | ~$6–12/mo |
+| Path | Best for | Cost |
+|------|----------|------|
+| **[Free — Vercel + Fly + Neon](DEPLOYMENT-FREE.md)** | Personal / hobby, $0 | **$0/mo** |
+| **[A) Render](#path-a-render)** | Easiest paid all-in-one | ~$14/mo |
+| **[B) VPS + Docker](#path-b-vps--docker)** | Full control | ~$6–12/mo |
 
 Both paths give you HTTPS, Postgres, auto-migrations, and background workers (auto-publish + metrics).
 
@@ -42,7 +43,9 @@ Production requires `LLM_MODE=live` and `OPENAI_API_KEY`.
 
 ---
 
-## Path A: Render (recommended)
+## Path A: Render (paid — ~$14/mo for API + Web)
+
+> **Want free?** Use **[DEPLOYMENT-FREE.md](DEPLOYMENT-FREE.md)** instead (Vercel + Fly.io + Neon = $0).
 
 ### Step 1 — Push to GitHub
 

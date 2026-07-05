@@ -106,19 +106,9 @@ See [M6 TDD Walkthrough](docs/M6-TDD-WALKTHROUGH.md).
 
 ## Deploy to production
 
-See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for the full guide.
+**Free ($0/mo):** **[docs/DEPLOYMENT-FREE.md](docs/DEPLOYMENT-FREE.md)** — Vercel (web) + Fly.io (API) + Neon (DB)
 
-**Fastest path (Render):**
-1. Push to GitHub
-2. [Render](https://render.com) → New → Blueprint → connect repo
-3. Set env vars (`TOKEN_ENCRYPTION_KEY`, X OAuth, `OPENAI_API_KEY`, `NEXT_PUBLIC_API_URL`)
-4. Update X Developer Portal callback to your live URL
-
-**VPS path:**
-```bash
-cp .env.production.example .env.production   # fill in secrets + domains
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
-```
+**Paid all-in-one:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Render (~$14/mo) or VPS
 
 ## Quick Start (local dev)
 

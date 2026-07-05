@@ -1,0 +1,35 @@
+# fly.toml — free-tier API deploy (https://fly.io)
+# Deploy: fly launch --no-deploy && fly secrets import < .env.fly && fly deploy
+
+app = 'xautopilot-api'
+primary_region = 'bom'
+
+[build]
+  dockerfile = 'infra/docker/Dockerfile.api.prod'
+
+[env]
+  APP_ENV = 'production'
+  X_API_MODE = 'live'
+  LLM_MODE = 'live'
+  WORKER_ENABLED = 'true'
+  WORKER_MANUAL_TICK_ENABLED = 'false'
+  LLM_DAILY_BUDGET_USD = '5.0'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '60s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
