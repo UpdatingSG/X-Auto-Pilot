@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY apps/api/pyproject.toml .
+COPY apps/api/src ./src
+COPY apps/api/alembic ./alembic
+COPY apps/api/alembic.ini .
+
+RUN pip install --no-cache-dir -e .
+
+COPY infra/docker/api-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV APP_ENV=production
+ENV WORKER_ENABLED=true
+ENV WORKER_MANUAL_TICK_ENABLED=false
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')" || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uvicorn", "xautopilot.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

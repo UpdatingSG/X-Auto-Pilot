@@ -1,0 +1,22 @@
+name: Docker Production Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API production image
+        run: docker build -f infra/docker/Dockerfile.api.prod -t xautopilot-api:test .
+
+      - name: Build Web production image
+        run: |
+          docker build -f infra/docker/Dockerfile.web.prod \
+            --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+            -t xautopilot-web:test .
