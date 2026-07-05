@@ -1,24 +1,13 @@
-// Local dev → localhost:8000. Deployed → same-origin /v1 (Vercel rewrites to Render).
+/** Local dev hits API directly; deployed app uses same-origin /v1 (server proxy). */
 function getApiBaseUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
-
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    const isLocal = host === "localhost" || host === "127.0.0.1";
-    if (!isLocal) {
-      return "";
-    }
-    if (fromEnv && !fromEnv.includes("localhost")) {
-      return fromEnv;
-    }
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") {
     return "http://localhost:8000";
   }
-
-  if (fromEnv && !fromEnv.includes("localhost")) {
-    return fromEnv;
-  }
-  const serverUrl = process.env.API_URL?.trim().replace(/\/$/, "");
-  return serverUrl || "http://localhost:8000";
+  return "";
 }
 
 export type User = {

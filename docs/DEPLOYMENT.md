@@ -84,9 +84,10 @@ After the blueprint is created, open each service and set **sync: false** vars:
 
 | Variable | Example |
 |----------|---------|
-| `NEXT_PUBLIC_API_URL` | `https://xautopilot-api.onrender.com` |
+| `API_URL` | Vercel (server only) | `https://xautopilot-api.onrender.com` |
+| `NEXT_PUBLIC_API_URL` | **Do not set** | Delete if present — it is baked into the browser bundle |
 
-> **Important:** Set `NEXT_PUBLIC_API_URL` **before** the first web deploy (it's baked in at build time). If you change it later, trigger a manual redeploy of the web service.
+> **Important:** The web app proxies `/v1/*` to Render via a Next.js route handler using **runtime** `API_URL`. Do **not** set `NEXT_PUBLIC_API_URL` on Vercel (especially not to `localhost`). After changing env vars, redeploy the web app.
 
 ### Step 4 — Custom domain (optional)
 
