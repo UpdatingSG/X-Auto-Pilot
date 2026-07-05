@@ -1,5 +1,6 @@
 # Render Blueprint — PAID (~$14/mo: $7 API + $7 Web; Postgres free tier deprecated)
-# For FREE deploy use docs/DEPLOYMENT-FREE.md (Vercel + Fly.io + Neon)
+# For FREE deploy use docs/DEPLOYMENT-FREE.md (Vercel + Render free API + Neon)
+# Use render-api-free.yaml for API-only free deploy — NOT this file (2 paid services)
 # Docs: https://render.com/docs/blueprint-spec
 #
 # Setup:

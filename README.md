@@ -106,7 +106,7 @@ See [M6 TDD Walkthrough](docs/M6-TDD-WALKTHROUGH.md).
 
 ## Deploy to production
 
-**Free ($0/mo):** **[docs/DEPLOYMENT-FREE.md](docs/DEPLOYMENT-FREE.md)** — Vercel (web) + Fly.io (API) + Neon (DB)
+**Free ($0/mo):** **[docs/DEPLOYMENT-FREE.md](docs/DEPLOYMENT-FREE.md)** — Vercel (web) + Render free (API) + Neon (DB)
 
 **Paid all-in-one:** [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — Render (~$14/mo) or VPS
 

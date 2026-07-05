@@ -4,7 +4,7 @@ Get X-Autopilot live on the internet.
 
 | Path | Best for | Cost |
 |------|----------|------|
-| **[Free — Vercel + Fly + Neon](DEPLOYMENT-FREE.md)** | Personal / hobby, $0 | **$0/mo** |
+| **[Free — Vercel + Render + Neon](DEPLOYMENT-FREE.md)** | Personal / hobby, no card | **$0/mo** |
 | **[A) Render](#path-a-render)** | Easiest paid all-in-one | ~$14/mo |
 | **[B) VPS + Docker](#path-b-vps--docker)** | Full control | ~$6–12/mo |
 
@@ -45,7 +45,7 @@ Production requires `LLM_MODE=live` and `OPENAI_API_KEY`.
 
 ## Path A: Render (paid — ~$14/mo for API + Web)
 
-> **Want free?** Use **[DEPLOYMENT-FREE.md](DEPLOYMENT-FREE.md)** instead (Vercel + Fly.io + Neon = $0).
+> **Want free?** Use **[DEPLOYMENT-FREE.md](DEPLOYMENT-FREE.md)** (Vercel + Render free API + Neon = $0).
 
 ### Step 1 — Push to GitHub
 

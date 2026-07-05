@@ -1,170 +1,139 @@
 # Free Deployment ($0/month)
 
-Render charges ~$7 per service (API + Web = **$14/mo**). This guide deploys everything on **free tiers**.
+No Fly.io. No credit card. No $14 Render Blueprint.
 
-| Component | Provider | Free tier |
-|-----------|----------|-----------|
-| **Web** (Next.js) | [Vercel](https://vercel.com) | Hobby — free |
-| **API** (FastAPI + worker) | [Fly.io](https://fly.io) | ~3 shared VMs, 256MB each |
-| **Postgres** | [Neon](https://neon.tech) | 0.5 GB, free |
+| Component | Provider | Cost |
+|-----------|----------|------|
+| **Web** (Next.js) | [Vercel](https://vercel.com) | Free |
+| **API** (FastAPI + worker) | [Render](https://render.com) free tier | Free |
+| **Postgres** | [Neon](https://neon.tech) | Free |
 
-**Trade-offs vs paid Render:**
-- Fly API **sleeps** when idle (~30s cold start on first request)
-- Neon DB sleeps after 5 min inactivity on free tier
-- Fine for personal use / dogfooding; upgrade later if you need 24/7
+**Why not Fly.io?** New accounts in some regions get a "$4 high risk" card verification. Skip it — use Render's **single free web service** for the API instead.
+
+**Why not the full Render Blueprint (`render.yaml`)?** That creates 2 paid services (API + Web = $14/mo). We only use Render for the API; Vercel hosts the web app for free.
+
+**Trade-offs:**
+- Render free API **spins down** after ~15 min idle (cold start ~30–60s)
+- Neon free DB sleeps after inactivity
+- Perfect for personal / hobby use
 
 ---
 
 ## Step 1 — Postgres on Neon (free)
 
-1. Sign up at [neon.tech](https://neon.tech)
-2. **New Project** → name `xautopilot` → region closest to you
-3. Copy the connection string (looks like `postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require`)
-4. Convert for our API — change the prefix:
+1. [neon.tech](https://neon.tech) → sign up → **New Project**
+2. Copy connection string
+3. Add `+asyncpg` after `postgresql`:
    ```
    postgresql+asyncpg://user:pass@ep-xxx.neon.tech/neondb?sslmode=require
    ```
 
 ---
 
-## Step 2 — API on Fly.io (free)
+## Step 2 — API on Render (free)
 
-### Install Fly CLI
+### Option A: Blueprint (API only)
 
-```bash
-# macOS
-brew install flyctl
-fly auth login
-```
+1. Push repo to GitHub
+2. Render → **New** → **Blueprint**
+3. When asked which file, use **`render-api-free.yaml`** (not `render.yaml`)
+4. Confirm it shows **1 service**, plan **Free**
+5. Set these env vars when prompted (`sync: false` ones):
 
-### Generate secrets
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | Neon URL with `postgresql+asyncpg://` |
+| `TOKEN_ENCRYPTION_KEY` | from `./scripts/generate-secrets.sh` |
+| `CORS_ORIGINS` | `["https://PLACEHOLDER.vercel.app"]` (update after Step 3) |
+| `FRONTEND_URL` | `https://PLACEHOLDER.vercel.app` |
+| `X_REDIRECT_URI` | `https://PLACEHOLDER.vercel.app/settings/x/callback` |
+| `X_CLIENT_ID` | your X app |
+| `X_CLIENT_SECRET` | your X app secret |
+| `OPENAI_API_KEY` | Groq or OpenAI key |
 
-```bash
-./scripts/generate-secrets.sh
-```
+6. **Deploy Blueprint**
 
-Create `.env.fly` (use `.env.free.example` as template):
+Your API URL: `https://xautopilot-api.onrender.com`
 
-```bash
-DATABASE_URL=postgresql+asyncpg://...@ep-xxx.neon.tech/neondb?sslmode=require
-SECRET_KEY=<from generate-secrets.sh>
-TOKEN_ENCRYPTION_KEY=<from generate-secrets.sh>
-CORS_ORIGINS=["https://YOUR_APP.vercel.app"]
-FRONTEND_URL=https://YOUR_APP.vercel.app
-X_REDIRECT_URI=https://YOUR_APP.vercel.app/settings/x/callback
-X_CLIENT_ID=<your X app>
-X_CLIENT_SECRET=<your X app secret>
-OPENAI_API_KEY=<Groq or OpenAI key>
-OPENAI_BASE_URL=https://api.groq.com/openai/v1
-OPENAI_MODEL=llama-3.3-70b-versatile
-```
+### Option B: Manual (if Blueprint fails)
 
-> Use a placeholder Vercel URL first; update after Step 3, then `fly secrets import < .env.fly` again.
-
-### Deploy API
-
-```bash
-cd /path/to/x-autopilot
-
-# First time only — creates the app (say no to Postgres addon; we use Neon)
-fly launch --no-deploy --copy-config --name xautopilot-api
-
-# Set secrets
-fly secrets import < .env.fly
-
-# Deploy
-fly deploy
-
-# Your API URL:
-fly status
-# → https://xautopilot-api.fly.dev
-```
+1. Render → **New** → **Web Service**
+2. Connect GitHub repo
+3. **Runtime:** Docker
+4. **Dockerfile path:** `infra/docker/Dockerfile.api.prod`
+5. **Instance type:** **Free**
+6. Add env vars from table above
+7. **Create Web Service**
 
 Verify:
-
 ```bash
-curl https://xautopilot-api.fly.dev/health
-curl https://xautopilot-api.fly.dev/health/ready
+curl https://xautopilot-api.onrender.com/health
 ```
+
+> First request after idle may take 30–60s while the service wakes up.
 
 ---
 
 ## Step 3 — Web on Vercel (free)
 
-1. Push repo to **GitHub**
-2. [vercel.com](https://vercel.com) → **Add New Project** → import repo
-3. **Root Directory:** `apps/web`
-4. **Environment variable** (required at build time):
+1. [vercel.com](https://vercel.com) → **Add New Project** → import repo
+2. **Root Directory:** `apps/web`
+3. **Environment variable:**
 
    | Key | Value |
    |-----|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://xautopilot-api.fly.dev` |
+   | `NEXT_PUBLIC_API_URL` | `https://xautopilot-api.onrender.com` |
 
-5. **Deploy**
+4. **Deploy**
 
-Your app URL will be something like `https://x-autopilot-xxx.vercel.app`.
+Note your URL: `https://x-autopilot-xxx.vercel.app`
 
-### Update API CORS + X OAuth
+---
 
-Edit `.env.fly` with the real Vercel URL:
+## Step 4 — Connect everything
 
-```bash
+### Update Render API env vars
+
+Replace placeholders with your real Vercel URL:
+
+```
 CORS_ORIGINS=["https://x-autopilot-xxx.vercel.app"]
 FRONTEND_URL=https://x-autopilot-xxx.vercel.app
 X_REDIRECT_URI=https://x-autopilot-xxx.vercel.app/settings/x/callback
 ```
 
-```bash
-fly secrets import < .env.fly
-```
+Render → your API service → **Environment** → save → **Manual Deploy**
 
-**X Developer Portal** → set callback URL to:
+### Update X Developer Portal
+
+Callback URL:
 ```
 https://x-autopilot-xxx.vercel.app/settings/x/callback
 ```
 
 ---
 
-## Step 4 — Verify end-to-end
+## Step 5 — Test
 
-1. Open your Vercel URL
-2. Register → log in
-3. Settings → Voice Profile → save
-4. Settings → X Account → Connect with X
-5. Content Plan → Generate plan
+1. Open Vercel URL → register
+2. Settings → X Account → Connect
+3. Content Plan → Generate
 
----
-
-## Free tier limits
-
-| Service | Limit | What happens |
-|---------|-------|--------------|
-| Fly.io | 3 shared VMs, 160GB outbound/mo | API sleeps when idle |
-| Neon | 0.5 GB storage, compute sleeps | ~1s wake on first DB query |
-| Vercel | 100GB bandwidth, hobby use | Plenty for personal app |
+If API is slow on first load, wait ~60s (Render waking up) and refresh.
 
 ---
 
-## Alternative: 100% free single server (Oracle Cloud)
+## If Render free is unavailable
 
-If you prefer one server instead of three services:
+Some accounts/regions can't get Render free tier. Alternatives:
 
-1. Create an **Oracle Cloud Always Free** ARM VM (4 OCPU, 24GB RAM — $0 forever)
-2. Install Docker
-3. Use Neon for DB anyway (easier than self-hosting Postgres), or run full `docker-compose.prod.yml`
-4. Point a domain or use the VM's IP with Caddy
+| Option | Cost | Notes |
+|--------|------|-------|
+| **Oracle Cloud Always Free VM** | $0 | 4 ARM cores, run `docker-compose.prod.yml` + Neon |
+| **Google Cloud Run** | $0* | Free tier limits; needs GCP account |
+| **Pay Fly.io $4 hold** | Refunded | One-time verification, then free tier works |
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) Path B for docker-compose details.
-
----
-
-## Upgrading later
-
-When you outgrow free tiers:
-
-- Fly → `fly scale memory 512` or Render starter ($7)
-- Neon → paid plan ($19) for always-on DB
-- Vercel Pro only if you need team features
+Oracle path: see [DEPLOYMENT.md](DEPLOYMENT.md) Path B — use Neon for DB, skip self-hosted Postgres.
 
 ---
 
@@ -172,8 +141,8 @@ When you outgrow free tiers:
 
 | Issue | Fix |
 |-------|-----|
-| API 502 / slow first request | Fly machine was asleep — wait ~30s, retry |
-| CORS error | `CORS_ORIGINS` must exactly match Vercel URL with `https://` |
-| X OAuth fails | Callback URL must match `X_REDIRECT_URI` exactly |
-| DB connection error | Use `postgresql+asyncpg://` prefix; include `?sslmode=require` |
-| Web shows wrong API | Redeploy Vercel after changing `NEXT_PUBLIC_API_URL` |
+| Render shows $7 not Free | Pick **Free** instance type manually; don't use `render.yaml` |
+| API timeout on first request | Free tier waking up — wait 60s, retry |
+| CORS errors | `CORS_ORIGINS` must match Vercel URL exactly |
+| X OAuth fails | Callback must match `X_REDIRECT_URI` |
+| DB errors | URL must be `postgresql+asyncpg://...?sslmode=require` |

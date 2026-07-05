@@ -1,0 +1,50 @@
+# Render — API only (FREE tier)
+# Web deploys separately on Vercel (see docs/DEPLOYMENT-FREE.md)
+#
+# Deploy: Render Dashboard → New → Blueprint → connect repo
+# OR: New Web Service → Docker → Dockerfile.api.prod
+
+services:
+  - type: web
+    name: xautopilot-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./infra/docker/Dockerfile.api.prod
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: X_REDIRECT_URI
+        sync: false
+      - key: X_API_MODE
+        value: live
+      - key: X_CLIENT_ID
+        sync: false
+      - key: X_CLIENT_SECRET
+        sync: false
+      - key: LLM_MODE
+        value: live
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: llama-3.3-70b-versatile
+      - key: OPENAI_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_DAILY_BUDGET_USD
+        value: "5.0"
+      - key: WORKER_ENABLED
+        value: "true"
+      - key: WORKER_MANUAL_TICK_ENABLED
+        value: "false"
