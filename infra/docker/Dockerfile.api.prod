@@ -11,7 +11,7 @@ COPY apps/api/src ./src
 COPY apps/api/alembic ./alembic
 COPY apps/api/alembic.ini .
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e . psycopg2-binary>=2.9.10
 
 COPY infra/docker/api-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
