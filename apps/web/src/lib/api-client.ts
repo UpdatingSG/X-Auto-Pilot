@@ -1,7 +1,25 @@
-// Local dev: call API directly. Production on Vercel: same-origin /v1 (proxied to Render).
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
+// Local dev → localhost:8000. Deployed → same-origin /v1 (Vercel rewrites to Render).
+function getApiBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    const isLocal = host === "localhost" || host === "127.0.0.1";
+    if (!isLocal) {
+      return "";
+    }
+    if (fromEnv && !fromEnv.includes("localhost")) {
+      return fromEnv;
+    }
+    return "http://localhost:8000";
+  }
+
+  if (fromEnv && !fromEnv.includes("localhost")) {
+    return fromEnv;
+  }
+  const serverUrl = process.env.API_URL?.trim().replace(/\/$/, "");
+  return serverUrl || "http://localhost:8000";
+}
 
 export type User = {
   id: string;
@@ -225,7 +243,7 @@ async function request<T>(
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const response = await fetch(`${getApiBaseUrl()}${path}`, { ...options, headers });
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type") ?? "";
