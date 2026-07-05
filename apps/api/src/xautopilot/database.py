@@ -4,8 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from xautopilot.config import settings
+from xautopilot.database_url import prepare_asyncpg_url
 
-engine = create_async_engine(settings.database_url, echo=False)
+_db_url, _db_connect_args = prepare_asyncpg_url(settings.database_url)
+engine = create_async_engine(_db_url, echo=False, connect_args=_db_connect_args)
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

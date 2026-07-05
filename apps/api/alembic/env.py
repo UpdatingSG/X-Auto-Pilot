@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from xautopilot.config import settings
 from xautopilot.database import Base
+from xautopilot.database_url import prepare_asyncpg_url
 from xautopilot.models import (  # noqa: F401
     content,
     knowledge,
@@ -48,9 +49,11 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
+    db_url, connect_args = prepare_asyncpg_url(settings.database_url)
     connectable = create_async_engine(
-        settings.database_url,
+        db_url,
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
