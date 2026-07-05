@@ -78,13 +78,15 @@ curl https://xautopilot-api.onrender.com/health
 
 1. [vercel.com](https://vercel.com) → **Add New Project** → import repo
 2. **Root Directory:** `apps/web`
-3. **Environment variable:**
+3. **Environment variable** (required at build time):
 
    | Key | Value |
    |-----|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://xautopilot-api.onrender.com` |
+   | `API_URL` | `https://xautopilot-api.onrender.com` |
 
-4. **Deploy**
+   > Use your **Render API URL**, not your Vercel URL. Vercel proxies `/v1/*` to Render.
+
+4. **Redeploy** after saving env vars
 
 Note your URL: `https://x-autopilot-xxx.vercel.app`
 
