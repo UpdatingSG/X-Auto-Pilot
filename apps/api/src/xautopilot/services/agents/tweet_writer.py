@@ -26,14 +26,15 @@ def _template_variations(
     profession: str,
     vocabulary_avoid: list[str],
     count: int,
+    category: str = "engineering",
 ) -> list[TweetVariant]:
     hooks = ["question", "contrarian", "story"][:count]
     variants: list[TweetVariant] = []
 
     templates = {
-        "question": f"Why does everyone overcomplicate {title.lower()}? Here's what I've seen as a {profession}.",
-        "contrarian": f"Unpopular opinion: most {title.lower()} advice is wrong. {hook_idea}.",
-        "story": f"Last week I debugged a production issue related to {title.lower()}. Lesson learned.",
+        "question": f"Why does everyone overcomplicate {title.lower()}? Here's what I've seen as a {profession}. #buildinpublic",
+        "contrarian": f"Unpopular opinion: most {title.lower()} advice is wrong. {hook_idea}. #{category}",
+        "story": f"Last week I debugged a production issue related to {title.lower()}. Lesson learned. #tech",
     }
 
     for i, hook_type in enumerate(hooks):
@@ -92,9 +93,13 @@ async def generate_tweet_variations(
     user_id: UUID | None = None,
     category: str = "engineering",
     tone: list[str] | None = None,
+    max_hashtags: int = 2,
+    favorite_hashtags: list[str] | None = None,
 ) -> tuple[list[TweetVariant], dict]:
     if settings.llm_mode == "mock":
-        return _template_variations(title, hook_idea, profession, vocabulary_avoid, count), {
+        return _template_variations(
+            title, hook_idea, profession, vocabulary_avoid, count, category
+        ), {
             "llm_mode": "mock",
             "prompt_version": PROMPT_VERSION,
         }
@@ -104,7 +109,7 @@ async def generate_tweet_variations(
 
     await ensure_llm_budget(session, user_id)
     completion = await complete_json(
-        writer_system_prompt(),
+        writer_system_prompt(max_hashtags=max_hashtags),
         writer_user_prompt(
             title=title,
             hook_idea=hook_idea,
@@ -113,6 +118,8 @@ async def generate_tweet_variations(
             tone=tone or [],
             vocabulary_avoid=vocabulary_avoid,
             count=count,
+            max_hashtags=max_hashtags,
+            favorite_hashtags=favorite_hashtags,
         ),
         prompt_version=PROMPT_VERSION,
     )

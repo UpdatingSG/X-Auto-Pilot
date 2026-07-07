@@ -1,6 +1,24 @@
 """Versioned prompts for content agents."""
 
-PROMPT_VERSION = "1.1.0"
+PROMPT_VERSION = "1.2.0"
+
+
+def _hashtag_instruction(
+    *,
+    max_per_tweet: int,
+    favorites: list[str],
+    category: str,
+    for_thread_final_tweet: bool = False,
+) -> str:
+    if max_per_tweet <= 0:
+        return "Do not use hashtags."
+    fav = ", ".join(favorites) if favorites else "none configured"
+    placement = "on the final tweet only" if for_thread_final_tweet else "at the end of each tweet"
+    return (
+        f"Include {max_per_tweet} relevant hashtag(s) {placement} for discoverability. "
+        f"Prefer favorites when set: {fav}. "
+        f"Otherwise pick specific tags for category '{category}' (avoid generic tags like #motivation)."
+    )
 
 
 def planner_system_prompt() -> str:
@@ -64,20 +82,33 @@ Return JSON:
 }}"""
 
 
-def writer_system_prompt() -> str:
-    return """You are a ghostwriter for Twitter. Write tweets that sound human, not AI.
-Max 280 characters per tweet. Respond with valid JSON only."""
+def writer_system_prompt(*, max_hashtags: int = 2) -> str:
+    hashtag_rule = (
+        f"Include up to {max_hashtags} relevant hashtags at the end when they fit naturally."
+        if max_hashtags > 0
+        else "Do not use hashtags."
+    )
+    return f"""You are a ghostwriter for Twitter. Write tweets that sound human, not AI.
+Max 280 characters per tweet. {hashtag_rule}
+Respond with valid JSON only."""
 
 
-def thread_writer_system_prompt() -> str:
-    return """You are a Twitter thread writer. Create engaging multi-tweet threads (6-10 tweets).
+def thread_writer_system_prompt(*, max_hashtags: int = 2) -> str:
+    hashtag_rule = (
+        f"Put up to {max_hashtags} relevant hashtags on the final tweet only."
+        if max_hashtags > 0
+        else "Do not use hashtags."
+    )
+    return f"""You are a Twitter thread writer. Create engaging multi-tweet threads (6-10 tweets).
 Tweet 1 is the hook. Each tweet <= 280 chars. No "1/12" numbering unless natural.
+{hashtag_rule}
 Respond with valid JSON only."""
 
 
 def reply_writer_system_prompt() -> str:
     return """You write valuable Twitter replies that add insight — never generic praise.
-Max 280 characters. Reference the original tweet naturally. Respond with valid JSON only."""
+Max 280 characters. Do not use hashtags in replies. Reference the original tweet naturally.
+Respond with valid JSON only."""
 
 
 def writer_user_prompt(
@@ -89,10 +120,17 @@ def writer_user_prompt(
     tone: list[str],
     vocabulary_avoid: list[str],
     count: int = 3,
+    max_hashtags: int = 2,
+    favorite_hashtags: list[str] | None = None,
 ) -> str:
     avoid = ", ".join(vocabulary_avoid) or "(none)"
     tone_str = ", ".join(tone) or "professional"
     hooks = ["question", "contrarian", "story"][:count]
+    hashtag_line = _hashtag_instruction(
+        max_per_tweet=max_hashtags,
+        favorites=favorite_hashtags or [],
+        category=category,
+    )
 
     return f"""Write {count} tweet variations for this idea.
 
@@ -104,6 +142,7 @@ Tone: {tone_str}
 Avoid: {avoid}
 
 Hook types: {", ".join(hooks)}
+Hashtags: {hashtag_line}
 
 Return JSON:
 {{
@@ -126,9 +165,17 @@ def thread_writer_user_prompt(
     tone: list[str],
     vocabulary_avoid: list[str],
     count: int = 2,
+    max_hashtags: int = 2,
+    favorite_hashtags: list[str] | None = None,
 ) -> str:
     avoid = ", ".join(vocabulary_avoid) or "(none)"
     tone_str = ", ".join(tone) or "professional"
+    hashtag_line = _hashtag_instruction(
+        max_per_tweet=max_hashtags,
+        favorites=favorite_hashtags or [],
+        category=category,
+        for_thread_final_tweet=True,
+    )
 
     return f"""Write {count} complete thread variants (6-8 tweets each).
 
@@ -138,6 +185,7 @@ Category: {category}
 Profession: {profession}
 Tone: {tone_str}
 Avoid: {avoid}
+Hashtags: {hashtag_line}
 
 Return JSON:
 {{

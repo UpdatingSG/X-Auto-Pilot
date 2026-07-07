@@ -1,6 +1,7 @@
 """APScheduler background worker."""
 
 import logging
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -34,10 +35,11 @@ def start_worker_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+        next_run_time=datetime.now(UTC),
     )
     scheduler.start()
     log.info(
-        "Background worker started (interval=%ss)",
+        "Background worker started (interval=%ss, immediate first tick)",
         settings.worker_tick_interval_seconds,
     )
     return scheduler

@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from xautopilot.models.content import Draft
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
 from xautopilot.services.schedule_service import get_schedule
-from xautopilot.services.slot_allocator import _ensure_utc, allocate_slot, avoid_collisions
+from xautopilot.services.slot_allocator import _ensure_utc, allocate_slot
 
 
 class DraftNotSchedulableError(Exception):
@@ -57,8 +57,9 @@ async def schedule_draft(
             timezone=timezone,
             jitter_minutes=schedule.jitter_minutes,
             rng=rng,
+            max_per_window=1,
+            daily_quota=schedule.tweets_per_day,
         )
-        slot = avoid_collisions(_ensure_utc(slot), occupied)
     else:
         slot = scheduled_at.astimezone(UTC)
 

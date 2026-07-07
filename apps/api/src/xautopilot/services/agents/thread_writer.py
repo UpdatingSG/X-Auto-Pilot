@@ -29,7 +29,7 @@ def _template_thread(title: str, hook_idea: str, profession: str, count: int) ->
         "Start with observability — htop, logs, and one metric that matters.",
         "Second: simplify before you scale. Complexity is rarely the answer.",
         "I learned this the hard way on a production incident last year.",
-        "If this helped, follow for more backend/system design notes.",
+        "If this helped, follow for more backend/system design notes. #buildinpublic",
     ]
     variants: list[ThreadVariant] = []
     for i in range(count):
@@ -94,6 +94,8 @@ async def generate_thread_variations(
     user_id: UUID | None = None,
     category: str = "educational",
     tone: list[str] | None = None,
+    max_hashtags: int = 2,
+    favorite_hashtags: list[str] | None = None,
 ) -> tuple[list[ThreadVariant], dict]:
     if settings.llm_mode == "mock":
         return _template_thread(title, hook_idea, profession, count), {
@@ -106,7 +108,7 @@ async def generate_thread_variations(
 
     await ensure_llm_budget(session, user_id)
     completion = await complete_json(
-        thread_writer_system_prompt(),
+        thread_writer_system_prompt(max_hashtags=max_hashtags),
         thread_writer_user_prompt(
             title=title,
             hook_idea=hook_idea,
@@ -115,6 +117,8 @@ async def generate_thread_variations(
             tone=tone or [],
             vocabulary_avoid=vocabulary_avoid,
             count=count,
+            max_hashtags=max_hashtags,
+            favorite_hashtags=favorite_hashtags,
         ),
         prompt_version=PROMPT_VERSION,
     )

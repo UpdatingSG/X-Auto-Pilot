@@ -61,8 +61,10 @@ export default function PublishQueuePage() {
   return (
     <AppShell title="Publish Queue">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Scheduled drafts waiting to go live. Overdue posts publish automatically every minute.
-        Use <strong className="text-zinc-200">Publish now</strong> to skip the wait.
+        Scheduled drafts waiting to go live. Overdue posts publish when the API worker runs
+        (every minute while the server is awake). On Render&apos;s free tier the API sleeps
+        after ~15 min idle — use <strong className="text-zinc-200">Publish now</strong> or set
+        up a cron ping to <code className="text-sky-300">POST /v1/worker/tick</code>.
       </p>
 
       {!account && (
@@ -88,7 +90,12 @@ export default function PublishQueuePage() {
                 #{index + 1} · {item.category} · {item.content_type}
               </p>
               <p className="mt-2 text-white">{item.preview_text}</p>
-              <p className="mt-2 text-sm text-sky-400">{formatWhen(item.scheduled_at)}</p>
+              <p className="mt-2 text-sm text-sky-400">
+                {formatWhen(item.scheduled_at)}
+                {new Date(item.scheduled_at) < new Date() && (
+                  <span className="ml-2 text-amber-400">· Overdue</span>
+                )}
+              </p>
             </div>
             <div className="flex shrink-0 gap-2">
               <button

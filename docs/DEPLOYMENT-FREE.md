@@ -148,3 +148,4 @@ Oracle path: see [DEPLOYMENT.md](DEPLOYMENT.md) Path B — use Neon for DB, skip
 | CORS errors | `CORS_ORIGINS` must match Vercel URL exactly |
 | X OAuth fails | Callback must match `X_REDIRECT_URI` |
 | DB errors | URL must be `postgresql+asyncpg://...?sslmode=require` |
+| Scheduled posts never publish | Render free API sleeps — worker stops. Set `WORKER_CRON_SECRET` on Render, then ping `POST /v1/worker/tick` every 10 min (e.g. [cron-job.org](https://cron-job.org)) with header `X-Worker-Secret`. Or use **Publish now** on the queue page. |

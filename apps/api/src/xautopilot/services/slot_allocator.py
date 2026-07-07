@@ -49,6 +49,39 @@ def _ensure_utc(dt: datetime) -> datetime:
     return dt.astimezone(UTC)
 
 
+def count_posts_on_date(occupied: list[datetime], target: date, tz: ZoneInfo) -> int:
+    return sum(1 for other in occupied if other.astimezone(tz).date() == target)
+
+
+def count_in_window(
+    occupied: list[datetime], window: PostingWindow, target: date, tz: ZoneInfo
+) -> int:
+    return sum(
+        1
+        for other in occupied
+        if other.astimezone(tz).date() == target
+        and window.start <= other.astimezone(tz).time() <= window.end
+    )
+
+
+def _slot_fits_window(slot: datetime, window: PostingWindow, target: date, tz: ZoneInfo) -> bool:
+    local = slot.astimezone(tz)
+    return local.date() == target and window.start <= local.time() <= window.end
+
+
+def _clamp_to_window(
+    slot: datetime, window: PostingWindow, target: date, tz: ZoneInfo
+) -> datetime:
+    local = slot.astimezone(tz)
+    if local.date() != target:
+        return slot
+    if local.time() < window.start:
+        return datetime.combine(target, window.start, tzinfo=tz)
+    if local.time() > window.end:
+        return datetime.combine(target, window.end, tzinfo=tz)
+    return slot
+
+
 def avoid_collisions(
     slot: datetime, occupied: list[datetime], min_gap_minutes: int = 20
 ) -> datetime:
@@ -65,46 +98,6 @@ def avoid_collisions(
     return slot
 
 
-def _slot_after_occupied(
-    occupied: list[datetime],
-    posting_windows: list[dict],
-    timezone: str,
-    min_gap_minutes: int,
-    target_date: date,
-    rng: random.Random,
-) -> datetime:
-    """Place the next post at least min_gap after the latest occupied slot."""
-    tz = ZoneInfo(timezone)
-    slot = max(_ensure_utc(other) for other in occupied) + timedelta(minutes=min_gap_minutes)
-    slot = de_round_time(slot, rng)
-    slot = avoid_collisions(slot, occupied, min_gap_minutes)
-
-    windows = parse_windows(posting_windows)
-    local = slot.astimezone(tz)
-    local_time = local.time()
-    local_date = local.date()
-
-    in_window = any(
-        local_date.isoweekday() in window.days and window.start <= local_time <= window.end
-        for window in windows
-    )
-    if in_window:
-        return _ensure_utc(slot)
-
-    # Drifted outside windows after de-rounding — pick the next window start.
-    for offset in range(8):
-        candidate_date = local_date + timedelta(days=offset)
-        iso_dow = candidate_date.isoweekday()
-        day_windows = [w for w in windows if iso_dow in w.days] or windows
-        for window in sorted(day_windows, key=lambda w: w.start):
-            start_dt = datetime.combine(candidate_date, window.start, tzinfo=tz)
-            if start_dt >= local:
-                candidate = de_round_time(start_dt, rng)
-                return avoid_collisions(candidate, occupied, min_gap_minutes)
-
-    return _ensure_utc(slot)
-
-
 def allocate_slot(
     posting_windows: list[dict],
     occupied: list[datetime],
@@ -113,47 +106,55 @@ def allocate_slot(
     target_date: date | None = None,
     rng: random.Random | None = None,
     min_gap_minutes: int = 20,
+    max_per_window: int = 1,
+    daily_quota: int | None = None,
+    max_days_ahead: int = 14,
 ) -> datetime:
-    """Pick a human-like posting time within configured windows."""
+    """Pick the next available window: one post per window, then next window or next day."""
     rng = rng or random.Random()
     tz = ZoneInfo(timezone)
-    target = target_date or datetime.now(tz).date()
+    start_date = target_date or datetime.now(tz).date()
     occupied_utc = [_ensure_utc(other) for other in occupied]
+    now = _ensure_utc(datetime.now(UTC))
+    windows_all = parse_windows(posting_windows)
 
-    if occupied_utc:
-        slot = _slot_after_occupied(
-            occupied_utc, posting_windows, timezone, min_gap_minutes, target, rng
+    for day_offset in range(max_days_ahead):
+        candidate_date = start_date + timedelta(days=day_offset)
+        iso_dow = datetime.combine(candidate_date, time(12), tzinfo=tz).isoweekday()
+        day_windows = sorted(
+            [w for w in windows_all if iso_dow in w.days],
+            key=lambda w: w.start,
         )
-        if slot <= _ensure_utc(datetime.now(UTC)):
-            slot = slot + timedelta(days=1)
-        return _ensure_utc(slot)
+        if not day_windows:
+            day_windows = sorted(windows_all, key=lambda w: w.start)
 
-    iso_dow = datetime.combine(target, time(12), tzinfo=tz).isoweekday()
+        if daily_quota is not None and count_posts_on_date(occupied_utc, candidate_date, tz) >= daily_quota:
+            continue
 
-    windows = [w for w in parse_windows(posting_windows) if iso_dow in w.days]
-    if not windows:
-        windows = parse_windows(posting_windows)
+        for window in day_windows:
+            if count_in_window(occupied_utc, window, candidate_date, tz) >= max_per_window:
+                continue
 
-    window = min(
-        windows,
-        key=lambda w: sum(
-            1
-            for o in occupied
-            if o.astimezone(tz).date() == target and w.start <= o.astimezone(tz).time() <= w.end
-        ),
-    )
-    slot = _random_time_in_window(window, target, tz, rng)
+            slot = _random_time_in_window(window, candidate_date, tz, rng)
 
-    jitter_secs = rng.randint(0, jitter_minutes * 60)
-    if rng.random() > 0.5:
-        jitter_secs = -jitter_secs
-    slot = slot + timedelta(seconds=jitter_secs)
+            jitter_secs = rng.randint(0, jitter_minutes * 60)
+            if rng.random() > 0.5:
+                jitter_secs = -jitter_secs
+            slot = slot + timedelta(seconds=jitter_secs)
+            slot = _clamp_to_window(slot, window, candidate_date, tz)
+            slot = de_round_time(slot, rng)
+            slot = _clamp_to_window(slot, window, candidate_date, tz)
 
-    slot = avoid_collisions(slot, occupied_utc, min_gap_minutes)
-    slot = de_round_time(slot, rng)
-    slot = avoid_collisions(slot, occupied_utc, min_gap_minutes)
+            if not _slot_fits_window(slot, window, candidate_date, tz):
+                continue
 
-    if slot <= _ensure_utc(datetime.now(UTC)):
-        slot = slot + timedelta(days=1)
+            slot = avoid_collisions(slot, occupied_utc, min_gap_minutes)
+            if not _slot_fits_window(slot, window, candidate_date, tz):
+                continue
 
-    return _ensure_utc(slot)
+            if slot <= now:
+                continue
+
+            return _ensure_utc(slot)
+
+    raise ValueError("No available posting slot within the configured horizon")

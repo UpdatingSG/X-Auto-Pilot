@@ -60,7 +60,7 @@ async def test_cancel_schedule_reverts_to_approved(client: AsyncClient):
     assert response.json()["scheduled_at"] is None
 
 
-async def test_two_scheduled_drafts_are_at_least_20_minutes_apart(client: AsyncClient):
+async def test_two_scheduled_drafts_use_different_windows(client: AsyncClient):
     headers, draft_id_1 = await create_approved_draft(client)
     resp1 = await client.post(f"/v1/drafts/{draft_id_1}/schedule", json={}, headers=headers)
 
@@ -88,3 +88,15 @@ async def test_two_scheduled_drafts_are_at_least_20_minutes_apart(client: AsyncC
     t1 = parse_dt(resp1.json()["scheduled_at"])
     t2 = parse_dt(resp2.json()["scheduled_at"])
     assert abs((t2 - t1).total_seconds()) >= 20 * 60
+
+    def window_bucket(dt: datetime) -> str:
+        hour = dt.hour
+        if 9 <= hour < 10:
+            return "morning"
+        if 13 <= hour < 14:
+            return "afternoon"
+        if 19 <= hour < 20:
+            return "evening"
+        return "other"
+
+    assert window_bucket(t1) != window_bucket(t2)

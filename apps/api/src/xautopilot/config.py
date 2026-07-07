@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     worker_enabled: bool = True
     worker_tick_interval_seconds: int = 60
     worker_manual_tick_enabled: bool = True
+    worker_cron_secret: str = ""
 
 
 settings = Settings()

@@ -81,6 +81,9 @@ async def generate_draft_from_idea(
     avoid = voice.vocabulary.get("avoid", []) if voice else []
     profession = voice.profession if voice else "Creator"
     tone = voice.tone if voice else []
+    hashtag_prefs = voice.hashtag_prefs if voice else {"max_per_tweet": 2, "favorites": []}
+    max_hashtags = int(hashtag_prefs.get("max_per_tweet", 2))
+    favorite_hashtags = list(hashtag_prefs.get("favorites", []))
 
     draft = Draft(
         user_id=user_id,
@@ -102,6 +105,8 @@ async def generate_draft_from_idea(
             user_id=user_id,
             category=idea.category,
             tone=tone,
+            max_hashtags=max_hashtags,
+            favorite_hashtags=favorite_hashtags,
         )
         await _save_variants(session, draft, thread_variants=variations)
     elif idea.content_type == "reply":
@@ -130,6 +135,8 @@ async def generate_draft_from_idea(
             user_id=user_id,
             category=idea.category,
             tone=tone,
+            max_hashtags=max_hashtags,
+            favorite_hashtags=favorite_hashtags,
         )
         await _save_variants(session, draft, tweet_variants=variations)
 
