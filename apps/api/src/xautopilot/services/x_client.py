@@ -30,6 +30,17 @@ class TweetMetricsResult:
     follower_count: int | None = None
 
 
+@dataclass
+class DiscoveredTweet:
+    x_tweet_id: str
+    x_user_id: str
+    author_handle: str
+    tweet_text: str
+    author_followers: int
+    likes: int
+    relevance_score: float = 0.0
+
+
 class XApiError(Exception):
     def __init__(self, message: str, status_code: int | None = None):
         self.status_code = status_code
@@ -54,9 +65,23 @@ class XClient(Protocol):
         self, access_token: str, text: str, *, in_reply_to_tweet_id: str
     ) -> TweetPostResult: ...
 
+    async def post_quote_tweet(
+        self, access_token: str, text: str, *, quote_tweet_id: str
+    ) -> TweetPostResult: ...
+
     async def post_thread(self, access_token: str, tweets: list[str]) -> ThreadPostResult: ...
 
     async def get_tweet_metrics(self, access_token: str, x_tweet_id: str) -> TweetMetricsResult: ...
+
+    async def search_recent_tweets(
+        self, access_token: str, *, query: str, max_results: int = 10
+    ) -> list[DiscoveredTweet]: ...
+
+    async def get_user_recent_tweets(
+        self, access_token: str, username: str, *, max_results: int = 5
+    ) -> list[DiscoveredTweet]: ...
+
+    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet: ...
 
 
 def _retry_after_seconds(response: httpx.Response) -> int | None:
@@ -137,6 +162,20 @@ class MockXClient:
         )
         return TweetPostResult(x_tweet_id=tweet_id)
 
+    async def post_quote_tweet(
+        self, access_token: str, text: str, *, quote_tweet_id: str
+    ) -> TweetPostResult:
+        tweet_id = str(random.randint(1_000_000_000, 9_999_999_999))
+        self.posts.append(
+            {
+                "access_token": access_token,
+                "text": text,
+                "x_tweet_id": tweet_id,
+                "quote_tweet_id": quote_tweet_id,
+            }
+        )
+        return TweetPostResult(x_tweet_id=tweet_id)
+
     async def post_thread(self, access_token: str, tweets: list[str]) -> ThreadPostResult:
         ids: list[str] = []
         for i, text in enumerate(tweets):
@@ -166,6 +205,51 @@ class MockXClient:
             follower_count=500 + seed % 200,
         )
 
+    async def search_recent_tweets(
+        self, access_token: str, *, query: str, max_results: int = 10
+    ) -> list[DiscoveredTweet]:
+        del access_token, query
+        return [
+            DiscoveredTweet(
+                x_tweet_id="9000000000000000010",
+                x_user_id="2001",
+                author_handle="rakyll",
+                tweet_text="Hot take: most teams adopt microservices before they need them. What's your threshold for splitting a service?",
+                author_followers=120_000,
+                likes=42,
+                relevance_score=0.9,
+            )
+        ][:max_results]
+
+    async def get_user_recent_tweets(
+        self, access_token: str, username: str, *, max_results: int = 5
+    ) -> list[DiscoveredTweet]:
+        del access_token
+        return [
+            DiscoveredTweet(
+                x_tweet_id=f"80000000000000000{idx}",
+                x_user_id=f"3{idx}",
+                author_handle=username,
+                tweet_text=f"Recent post from @{username} about backend systems and AI engineering #{idx}",
+                author_followers=75_000 + idx * 5_000,
+                likes=10 + idx * 3,
+                relevance_score=0.75,
+            )
+            for idx in range(max_results)
+        ]
+
+    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet:
+        del access_token
+        return DiscoveredTweet(
+            x_tweet_id=tweet_id,
+            x_user_id="mock-user",
+            author_handle="example",
+            tweet_text="Mock tweet text loaded from URL.",
+            author_followers=50_000,
+            likes=8,
+            relevance_score=0.8,
+        )
+
 
 class LiveXClient:
     async def post_tweet(self, access_token: str, text: str) -> TweetPostResult:
@@ -186,6 +270,18 @@ class LiveXClient:
             f"{settings.x_api_base_url}/tweets",
             access_token,
             json={"text": text, "reply": {"in_reply_to_tweet_id": in_reply_to_tweet_id}},
+        )
+        data = response.json()["data"]
+        return TweetPostResult(x_tweet_id=data["id"])
+
+    async def post_quote_tweet(
+        self, access_token: str, text: str, *, quote_tweet_id: str
+    ) -> TweetPostResult:
+        response = await _live_request(
+            "POST",
+            f"{settings.x_api_base_url}/tweets",
+            access_token,
+            json={"text": text, "quote_tweet_id": quote_tweet_id},
         )
         data = response.json()["data"]
         return TweetPostResult(x_tweet_id=data["id"])
@@ -211,17 +307,121 @@ class LiveXClient:
             "GET",
             f"{settings.x_api_base_url}/tweets/{x_tweet_id}",
             access_token,
-            params={"tweet.fields": "public_metrics"},
+            params={
+                "tweet.fields": "public_metrics,non_public_metrics,organic_metrics",
+            },
         )
-        metrics = response.json()["data"]["public_metrics"]
+        data = response.json()["data"]
+        public = data.get("public_metrics") or {}
+        non_public = data.get("non_public_metrics") or {}
+        organic = data.get("organic_metrics") or {}
+
+        impressions = (
+            non_public.get("impression_count")
+            or organic.get("impression_count")
+            or public.get("impression_count")
+            or 0
+        )
+        likes = organic.get("like_count") or public.get("like_count", 0)
+        replies = organic.get("reply_count") or public.get("reply_count", 0)
+        reposts = organic.get("retweet_count") or public.get("retweet_count", 0)
+        bookmarks = public.get("bookmark_count", 0)
+        quotes = organic.get("quote_count") or public.get("quote_count", 0)
+
         return TweetMetricsResult(
-            impressions=metrics.get("impression_count", 0),
-            likes=metrics.get("like_count", 0),
-            replies=metrics.get("reply_count", 0),
-            reposts=metrics.get("retweet_count", 0),
-            bookmarks=metrics.get("bookmark_count", 0),
-            quotes=metrics.get("quote_count", 0),
+            impressions=impressions,
+            likes=likes,
+            replies=replies,
+            reposts=reposts,
+            bookmarks=bookmarks,
+            quotes=quotes,
         )
+
+    def _parse_discovered_tweets(self, payload: dict) -> list[DiscoveredTweet]:
+        tweets = payload.get("data") or []
+        users = {
+            user["id"]: user
+            for user in (payload.get("includes") or {}).get("users") or []
+        }
+        discovered: list[DiscoveredTweet] = []
+        for tweet in tweets:
+            author = users.get(tweet.get("author_id"), {})
+            metrics = tweet.get("public_metrics") or {}
+            username = author.get("username") or "unknown"
+            user_metrics = author.get("public_metrics") or {}
+            discovered.append(
+                DiscoveredTweet(
+                    x_tweet_id=str(tweet["id"]),
+                    x_user_id=str(tweet.get("author_id") or "unknown"),
+                    author_handle=username,
+                    tweet_text=str(tweet.get("text") or ""),
+                    author_followers=int(user_metrics.get("followers_count") or 0),
+                    likes=int(metrics.get("like_count") or 0),
+                )
+            )
+        return discovered
+
+    async def search_recent_tweets(
+        self, access_token: str, *, query: str, max_results: int = 10
+    ) -> list[DiscoveredTweet]:
+        response = await _live_request(
+            "GET",
+            f"{settings.x_api_base_url}/tweets/search/recent",
+            access_token,
+            params={
+                "query": query,
+                "max_results": max(10, min(max_results, 100)),
+                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "expansions": "author_id",
+                "user.fields": "username,public_metrics",
+            },
+        )
+        return self._parse_discovered_tweets(response.json())
+
+    async def get_user_recent_tweets(
+        self, access_token: str, username: str, *, max_results: int = 5
+    ) -> list[DiscoveredTweet]:
+        user_response = await _live_request(
+            "GET",
+            f"{settings.x_api_base_url}/users/by/username/{username.lstrip('@')}",
+            access_token,
+            params={"user.fields": "public_metrics"},
+        )
+        user = user_response.json()["data"]
+        tweets_response = await _live_request(
+            "GET",
+            f"{settings.x_api_base_url}/users/{user['id']}/tweets",
+            access_token,
+            params={
+                "max_results": max(5, min(max_results, 10)),
+                "exclude": "retweets,replies",
+                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "expansions": "author_id",
+                "user.fields": "username,public_metrics",
+            },
+        )
+        discovered = self._parse_discovered_tweets(tweets_response.json())
+        followers = int((user.get("public_metrics") or {}).get("followers_count") or 0)
+        for tweet in discovered:
+            if tweet.author_followers <= 0:
+                tweet.author_followers = followers
+        return discovered
+
+    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet:
+        response = await _live_request(
+            "GET",
+            f"{settings.x_api_base_url}/tweets/{tweet_id}",
+            access_token,
+            params={
+                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "expansions": "author_id",
+                "user.fields": "username,public_metrics",
+            },
+        )
+        tweets = self._parse_discovered_tweets(response.json())
+        if not tweets:
+            raise XApiError("Tweet not found", status_code=404)
+        return tweets[0]
 
 
 mock_x_client = MockXClient()

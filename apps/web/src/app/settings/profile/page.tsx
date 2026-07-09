@@ -13,6 +13,7 @@ export default function VoiceProfilePage() {
   const [tone, setTone] = useState("technical, helpful, honest");
   const [avoid, setAvoid] = useState("leverage, synergy, game-changer");
   const [neverDiscuss, setNeverDiscuss] = useState("politics, crypto shilling");
+  const [watchlist, setWatchlist] = useState("swyx, rakyll, kelseyhightower");
   const [version, setVersion] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +28,9 @@ export default function VoiceProfilePage() {
       setTone(p.tone.join(", "));
       setAvoid(p.vocabulary.avoid.join(", "));
       setNeverDiscuss(p.never_discuss.join(", "));
+      setWatchlist(
+        (p.favorite_creators ?? []).map((c) => (typeof c === "string" ? c : c.handle)).join(", "),
+      );
       setVersion(p.version);
     }).catch(() => {/* no profile yet */});
   }, []);
@@ -48,6 +52,11 @@ export default function VoiceProfilePage() {
           avoid: avoid.split(",").map((t) => t.trim()).filter(Boolean),
         },
         never_discuss: neverDiscuss.split(",").map((t) => t.trim()).filter(Boolean),
+        favorite_creators: watchlist
+          .split(",")
+          .map((t) => t.trim().replace(/^@/, ""))
+          .filter(Boolean)
+          .map((handle) => ({ handle })),
         writing_style: { formality: "casual-professional" },
       });
       setVersion(profile.version);
@@ -70,6 +79,11 @@ export default function VoiceProfilePage() {
         <Field label="Tone (comma-separated)" value={tone} onChange={setTone} />
         <Field label="Words to avoid" value={avoid} onChange={setAvoid} />
         <Field label="Never discuss" value={neverDiscuss} onChange={setNeverDiscuss} />
+        <Field
+          label="Creator watchlist (handles, comma-separated)"
+          value={watchlist}
+          onChange={setWatchlist}
+        />
         {error && <p className="text-sm text-red-400">{error}</p>}
         {message && <p className="text-sm text-green-400">{message}</p>}
         <button type="submit" className="rounded-lg bg-sky-500 px-6 py-2.5 font-medium hover:bg-sky-400">

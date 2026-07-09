@@ -107,9 +107,6 @@ async def publish_draft_now(
             detail="X API rate limit exceeded. Try again later.",
             headers=headers,
         ) from None
-    except DraftNotPublishableError:
-        raise HTTPException(
-            status_code=400,
-            detail="Draft must be approved or scheduled to publish",
-        ) from None
+    except DraftNotPublishableError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     return _post_response(post)

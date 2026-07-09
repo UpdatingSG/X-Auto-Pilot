@@ -12,6 +12,8 @@ async def test_get_schedule_returns_defaults(client: AsyncClient):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["tweets_per_day"] == 3
+    assert body["tweets_per_day"] == 1
+    assert body["replies_per_day"] == 10
+    assert body["growth_mode"] is True
     assert body["jitter_minutes"] == 15
     assert len(body["posting_windows"]) == 3

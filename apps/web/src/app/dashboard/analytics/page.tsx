@@ -46,8 +46,19 @@ export default function AnalyticsPage() {
   return (
     <AppShell title="Analytics">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Track how your posts perform on X. Sync metrics to pull impressions, likes, and engagement rate.
+        Track how your posts perform on X. Low impressions on new accounts are normal — X rarely
+        pushes standalone tweets to strangers. Growth comes from replies, questions, and threads.
       </p>
+
+      <div className="mb-8 rounded-xl border border-amber-800/40 bg-amber-950/20 p-5 text-sm text-amber-100/90">
+        <h3 className="font-medium text-amber-200">Why reach feels low</h3>
+        <ul className="mt-3 list-inside list-disc space-y-1 text-amber-100/80">
+          <li>Under ~500 followers, most impressions come from your existing network only</li>
+          <li>Generic educational posts + double hashtags rarely get algorithmic boost</li>
+          <li>Your best posts asked questions — replies signal X to show you to more people</li>
+          <li>Use Engagement → add reply targets on larger accounts in your niche</li>
+        </ul>
+      </div>
 
       {overview && (
         <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

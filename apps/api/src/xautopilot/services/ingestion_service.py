@@ -1,6 +1,6 @@
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import feedparser
@@ -149,3 +149,39 @@ async def list_knowledge_items(session: AsyncSession, user_id: UUID) -> list[Kno
         .limit(50)
     )
     return list(result.scalars().all())
+
+
+async def list_timely_knowledge_items(
+    session: AsyncSession, user_id: UUID, *, hours: int = 48, limit: int = 10
+) -> list[dict]:
+    """Return recent knowledge items with snippets for timely-take planning."""
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    result = await session.execute(
+        select(KnowledgeItem)
+        .where(KnowledgeItem.user_id == user_id)
+        .order_by(KnowledgeItem.published_at.desc().nullslast(), KnowledgeItem.fetched_at.desc())
+        .limit(limit * 2)
+    )
+    items: list[dict] = []
+    for item in result.scalars().all():
+        published = item.published_at
+        if published and published.tzinfo is None:
+            published = published.replace(tzinfo=UTC)
+        fetched = item.fetched_at
+        if fetched and fetched.tzinfo is None:
+            fetched = fetched.replace(tzinfo=UTC)
+        ref_time = published or fetched
+        if ref_time and ref_time < cutoff:
+            continue
+        snippet = (item.content_raw or "")[:300].strip()
+        items.append(
+            {
+                "title": item.title,
+                "url": item.url,
+                "snippet": snippet or item.title,
+                "published_at": ref_time.isoformat() if ref_time else None,
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items

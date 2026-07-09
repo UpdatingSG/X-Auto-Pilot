@@ -96,6 +96,7 @@ async def generate_thread_variations(
     tone: list[str] | None = None,
     max_hashtags: int = 2,
     favorite_hashtags: list[str] | None = None,
+    bookmark_hints: list[str] | None = None,
 ) -> tuple[list[ThreadVariant], dict]:
     if settings.llm_mode == "mock":
         return _template_thread(title, hook_idea, profession, count), {
@@ -119,6 +120,7 @@ async def generate_thread_variations(
             count=count,
             max_hashtags=max_hashtags,
             favorite_hashtags=favorite_hashtags,
+            bookmark_hints=bookmark_hints,
         ),
         prompt_version=PROMPT_VERSION,
     )

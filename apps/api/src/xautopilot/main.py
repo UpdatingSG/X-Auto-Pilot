@@ -12,6 +12,7 @@ from xautopilot.routers import (
     analytics,
     auth,
     drafts,
+    growth,
     plans,
     profile,
     publish,
@@ -108,6 +109,7 @@ app.include_router(schedule.router)
 app.include_router(publish.router)
 app.include_router(x_account.router)
 app.include_router(analytics.router)
+app.include_router(growth.router)
 app.include_router(worker.router)
 
 

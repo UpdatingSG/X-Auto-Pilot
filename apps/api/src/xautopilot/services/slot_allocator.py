@@ -109,12 +109,16 @@ def allocate_slot(
     max_per_window: int = 1,
     daily_quota: int | None = None,
     max_days_ahead: int = 14,
+    daily_quota_occupied: list[datetime] | None = None,
 ) -> datetime:
     """Pick the next available window: one post per window, then next window or next day."""
     rng = rng or random.Random()
     tz = ZoneInfo(timezone)
     start_date = target_date or datetime.now(tz).date()
     occupied_utc = [_ensure_utc(other) for other in occupied]
+    quota_occupied_utc = [
+        _ensure_utc(other) for other in (daily_quota_occupied if daily_quota_occupied is not None else occupied)
+    ]
     now = _ensure_utc(datetime.now(UTC))
     windows_all = parse_windows(posting_windows)
 
@@ -128,7 +132,7 @@ def allocate_slot(
         if not day_windows:
             day_windows = sorted(windows_all, key=lambda w: w.start)
 
-        if daily_quota is not None and count_posts_on_date(occupied_utc, candidate_date, tz) >= daily_quota:
+        if daily_quota is not None and count_posts_on_date(quota_occupied_utc, candidate_date, tz) >= daily_quota:
             continue
 
         for window in day_windows:

@@ -9,6 +9,8 @@ import { clearToken, getToken } from "@/lib/auth";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/briefing", label: "Daily Briefing" },
+  { href: "/dashboard/growth", label: "Growth" },
   { href: "/settings/profile", label: "Voice Profile" },
   { href: "/settings/sources", label: "Sources" },
   { href: "/settings/schedule", label: "Schedule" },
@@ -47,7 +49,7 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
     <div className="flex min-h-screen bg-zinc-950 text-zinc-100">
       <aside className="w-64 border-r border-zinc-800 bg-zinc-900 p-6">
         <h1 className="text-lg font-semibold text-white">X-Autopilot</h1>
-        <p className="mt-1 text-xs text-zinc-500">Milestone 7</p>
+        <p className="mt-1 text-xs text-zinc-500">Growth mode</p>
         <nav className="mt-8 space-y-1">
           {navItems.map((item) => (
             <Link

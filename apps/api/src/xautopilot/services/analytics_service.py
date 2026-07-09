@@ -123,12 +123,77 @@ async def list_post_analytics(
                 x_tweet_id=post.x_tweet_id,
                 preview_text=post.preview_text,
                 category=category,
+                content_type=post.content_type,
                 published_at=post.published_at,
                 metrics=metrics,
             )
         )
 
     return items
+
+
+async def build_reach_hints(session: AsyncSession, user_id: UUID) -> list[str]:
+    """Summarize recent post performance to steer the content planner toward reach."""
+    posts = await list_post_analytics(session, user_id, "30d")
+    with_metrics = [p for p in posts if p.metrics is not None]
+    if not with_metrics:
+        return [
+            "Early account: prioritize replies on larger accounts over broadcasting tweets.",
+            "End tweets with a specific question — questions drove your best engagement so far.",
+            "Use 0-1 niche hashtag; double generic tags (#SoftwareEngineering #Educational) do not help reach.",
+        ]
+
+    ranked = sorted(
+        with_metrics,
+        key=lambda p: (p.metrics.impressions if p.metrics else 0, p.metrics.engagement_rate if p.metrics else 0),
+        reverse=True,
+    )
+    hints: list[str] = []
+    top = ranked[:2]
+    for post in top:
+        imp = post.metrics.impressions if post.metrics else 0
+        hints.append(f"Top post ({imp} impressions): \"{post.preview_text[:90]}...\"")
+
+    avg_imp = sum(p.metrics.impressions for p in with_metrics if p.metrics) / len(with_metrics)
+    if avg_imp < 50:
+        hints.append(
+            "Low average impressions — X is not distributing standalone posts. "
+            "Shift mix toward replies and threads; engage on others' posts daily."
+        )
+
+    question_posts = [p for p in with_metrics if p.preview_text and "?" in p.preview_text]
+    if question_posts:
+        hints.append("Posts ending with questions tend to get more replies — keep using open questions.")
+
+    hashtag_heavy = [
+        p for p in with_metrics
+        if p.preview_text and p.preview_text.count("#") >= 2
+    ]
+    if len(hashtag_heavy) > len(with_metrics) // 2:
+        hints.append("Reduce to 1 specific hashtag max — multiple generic tags are not helping reach.")
+
+    return hints[:6]
+
+
+async def build_bookmark_hints(session: AsyncSession, user_id: UUID) -> list[str]:
+    """Identify thread patterns that earn bookmarks."""
+    posts = await list_post_analytics(session, user_id, "60d")
+    thread_posts = [p for p in posts if p.content_type == "thread" and p.metrics]
+    if not thread_posts:
+        return ["Structure threads as step-by-step frameworks readers will bookmark."]
+    ranked = sorted(
+        thread_posts,
+        key=lambda p: (p.metrics.bookmarks if p.metrics else 0, p.metrics.impressions if p.metrics else 0),
+        reverse=True,
+    )
+    hints: list[str] = []
+    for post in ranked[:2]:
+        bm = post.metrics.bookmarks if post.metrics else 0
+        if bm > 0:
+            hints.append(f"Bookmark leader ({bm} saves): \"{post.preview_text[:80] if post.preview_text else ''}...\"")
+    if not hints:
+        hints.append("Add a checklist or numbered framework in threads — bookmark-worthy structure wins reach.")
+    return hints[:4]
 
 
 async def get_insights(session: AsyncSession, user_id: UUID) -> InsightsResponse:
@@ -144,11 +209,27 @@ async def get_insights(session: AsyncSession, user_id: UUID) -> InsightsResponse
 
     what_worked: list[str] = []
     if best.preview_text and best.category:
-        what_worked.append(f"{best.category} posts like \"{best.preview_text[:60]}...\"")
+        what_worked.append(
+            f"Best engagement: {best.category} — \"{best.preview_text[:80]}...\" "
+            f"({best.metrics.impressions if best.metrics else 0} impressions)"
+        )
+    if best.preview_text and "?" in best.preview_text:
+        what_worked.append("Question hooks are working — keep ending with specific questions.")
 
     what_failed: list[str] = []
-    if worst and worst.post_id != best.post_id and worst.metrics and worst.metrics.engagement_rate < 0.02:
-        what_failed.append(f"Low engagement on {worst.category or 'general'} content")
+    if worst and worst.post_id != best.post_id and worst.metrics:
+        if worst.metrics.impressions < 10:
+            what_failed.append(
+                f"Very low reach on: \"{worst.preview_text[:70] if worst.preview_text else 'post'}...\" "
+                "— try a personal story or reply instead of generic educational tone."
+            )
+        elif worst.metrics.engagement_rate < 0.02:
+            what_failed.append(f"Low engagement on {worst.category or 'general'} content")
+
+    reach_hints = await build_reach_hints(session, user_id)
+    for hint in reach_hints[:2]:
+        if hint not in what_worked:
+            what_worked.append(hint)
 
     best_hour = best.published_at.astimezone(UTC).hour
     best_category = best.category
@@ -158,6 +239,13 @@ async def get_insights(session: AsyncSession, user_id: UUID) -> InsightsResponse
         adjustments["increase_weight"].append(best_category)
     if worst and worst.category and worst.category != best_category:
         adjustments["decrease_weight"].append(worst.category)
+
+    from xautopilot.services.learning_service import apply_learned_weights
+
+    try:
+        await apply_learned_weights(session, user_id)
+    except Exception:
+        pass
 
     return InsightsResponse(
         period="7d",

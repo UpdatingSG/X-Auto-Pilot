@@ -18,6 +18,8 @@ class ScheduleUpdate(BaseModel):
     posting_windows: list[PostingWindowSchema] | None = None
     jitter_minutes: int | None = Field(default=None, ge=0, le=60)
     require_approval: bool | None = None
+    growth_mode: bool | None = None
+    auto_schedule_replies: bool | None = None
 
 
 class ScheduleResponse(BaseModel):
@@ -30,6 +32,8 @@ class ScheduleResponse(BaseModel):
     jitter_minutes: int
     require_approval: bool
     is_active: bool
+    growth_mode: bool
+    auto_schedule_replies: bool
 
     model_config = {"from_attributes": True}
 

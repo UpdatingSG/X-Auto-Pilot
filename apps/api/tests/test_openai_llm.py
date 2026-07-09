@@ -110,6 +110,11 @@ async def test_live_plan_generation_uses_openai(client: AsyncClient, monkeypatch
     )
 
     headers = await _setup_creator(client)
+    await client.put(
+        "/v1/schedule",
+        json={"growth_mode": False, "tweets_per_day": 3},
+        headers=headers,
+    )
     response = await client.post("/v1/plans/generate", headers=headers)
 
     assert response.status_code == 201

@@ -66,6 +66,7 @@ def test_enforce_plan_composition_overrides_llm_tweet_labels():
         tweet_count=2,
         thread_count=1,
         reply_count=1,
+        quote_count=0,
         reply_targets=targets,
     )
 
@@ -80,6 +81,7 @@ def test_sunday_slots_include_thread():
         threads_per_week=2,
         replies_per_day=2,
         reply_target_count=0,
+        growth_mode=False,
     )
     assert slots["thread_count"] == 1
     assert slots["tweet_count"] == 2

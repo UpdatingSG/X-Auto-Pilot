@@ -62,6 +62,11 @@ async def test_cancel_schedule_reverts_to_approved(client: AsyncClient):
 
 async def test_two_scheduled_drafts_use_different_windows(client: AsyncClient):
     headers, draft_id_1 = await create_approved_draft(client)
+    await client.put(
+        "/v1/schedule",
+        json={"growth_mode": False, "tweets_per_day": 5},
+        headers=headers,
+    )
     resp1 = await client.post(f"/v1/drafts/{draft_id_1}/schedule", json={}, headers=headers)
 
     plan = (await client.get("/v1/plans/today", headers=headers)).json()

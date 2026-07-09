@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from xautopilot.models.content import Draft, DraftVariant
 from xautopilot.models.published_post import PublishedPost
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
+from xautopilot.services.reply_target_service import ReplyTargetNotFoundError, get_reply_target
 from xautopilot.services.metrics_sync_service import schedule_metrics_sync_jobs
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import (
@@ -16,6 +17,7 @@ from xautopilot.services.x_client import (
     XClient,
     get_x_client,
 )
+from xautopilot.services.x_tweet_id import is_valid_x_tweet_id
 from xautopilot.services.x_token_service import (
     XAccountNeedsReauthError,
     XTokenRefreshError,
@@ -35,7 +37,8 @@ class XAccountNotConnectedError(Exception):
 
 
 class DraftNotPublishableError(Exception):
-    pass
+    def __init__(self, message: str = "Draft cannot be published"):
+        super().__init__(message)
 
 
 class XPublishError(Exception):
@@ -84,6 +87,10 @@ def _content_snapshot(draft: Draft) -> dict:
         metadata = draft.generation_metadata or {}
         if metadata.get("x_tweet_id"):
             snapshot["in_reply_to_tweet_id"] = metadata["x_tweet_id"]
+    if draft.content_type == "quote_tweet":
+        metadata = draft.generation_metadata or {}
+        if metadata.get("quote_tweet_id"):
+            snapshot["quote_tweet_id"] = metadata["quote_tweet_id"]
     return snapshot
 
 
@@ -166,9 +173,20 @@ async def publish_draft(
         text = preview
         if not text or len(text) > 280:
             raise DraftNotPublishableError
-        in_reply_to = (draft.generation_metadata or {}).get("x_tweet_id")
-        if not in_reply_to:
-            raise DraftNotPublishableError
+        metadata = draft.generation_metadata or {}
+        in_reply_to = metadata.get("x_tweet_id")
+        reply_target_id = metadata.get("reply_target_id")
+        if reply_target_id and not is_valid_x_tweet_id(str(in_reply_to or "")):
+            try:
+                target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
+                in_reply_to = target.x_tweet_id
+            except (ReplyTargetNotFoundError, ValueError):
+                pass
+        if not is_valid_x_tweet_id(str(in_reply_to or "")):
+            raise DraftNotPublishableError(
+                "Reply target is missing a valid numeric X tweet ID. "
+                "Re-import the post via URL on the Engagement page, or add the tweet ID from the post URL."
+            )
 
         async def _post_reply(access_token: str):
             return await client.post_reply(
@@ -176,6 +194,29 @@ async def publish_draft(
             )
 
         result = await _publish_with_client(session, user_id, client, _post_reply)
+        root_tweet_id = result.x_tweet_id
+    elif draft.content_type == "quote_tweet":
+        text = preview
+        if not text or len(text) > 280:
+            raise DraftNotPublishableError
+        metadata = draft.generation_metadata or {}
+        quote_id = metadata.get("quote_tweet_id") or metadata.get("x_tweet_id")
+        reply_target_id = metadata.get("reply_target_id")
+        if reply_target_id and not is_valid_x_tweet_id(str(quote_id or "")):
+            try:
+                target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
+                quote_id = target.x_tweet_id
+            except (ReplyTargetNotFoundError, ValueError):
+                pass
+        if not is_valid_x_tweet_id(str(quote_id or "")):
+            raise DraftNotPublishableError("Quote target is missing a valid numeric X tweet ID.")
+
+        async def _post_quote(access_token: str):
+            return await client.post_quote_tweet(
+                access_token, text, quote_tweet_id=str(quote_id)
+            )
+
+        result = await _publish_with_client(session, user_id, client, _post_quote)
         root_tweet_id = result.x_tweet_id
     else:
         text = preview

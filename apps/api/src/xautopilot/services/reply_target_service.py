@@ -5,9 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.models.reply_target import ReplyTarget
+from xautopilot.services.x_tweet_id import is_valid_x_tweet_id, normalize_x_tweet_id
 
 
 class ReplyTargetNotFoundError(Exception):
+    pass
+
+
+class InvalidReplyTargetError(Exception):
     pass
 
 
@@ -47,7 +52,11 @@ async def create_reply_target(
     conversation_context: list | None = None,
 ) -> ReplyTarget:
     handle = author_handle.lstrip("@")
-    tweet_id = x_tweet_id or f"manual-{handle}-{len(tweet_text)}"
+    if not x_tweet_id or not is_valid_x_tweet_id(x_tweet_id):
+        raise InvalidReplyTargetError(
+            "A numeric X tweet ID is required (from the post URL) to publish replies."
+        )
+    tweet_id = normalize_x_tweet_id(x_tweet_id)
     target = ReplyTarget(
         user_id=user_id,
         x_tweet_id=tweet_id,
@@ -70,6 +79,19 @@ async def get_reply_target(session: AsyncSession, user_id: UUID, target_id: UUID
     target = result.scalar_one_or_none()
     if target is None:
         raise ReplyTargetNotFoundError
+    return target
+
+
+async def update_reply_target_tweet_id(
+    session: AsyncSession,
+    user_id: UUID,
+    target_id: UUID,
+    x_tweet_id: str,
+) -> ReplyTarget:
+    target = await get_reply_target(session, user_id, target_id)
+    target.x_tweet_id = normalize_x_tweet_id(x_tweet_id)
+    await session.commit()
+    await session.refresh(target)
     return target
 
 

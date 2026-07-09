@@ -50,15 +50,27 @@ def plan_slot_counts(
     threads_per_week: int,
     replies_per_day: int,
     reply_target_count: int,
+    growth_mode: bool = True,
+    quote_tweets_per_day: int = 0,
+    quote_target_count: int = 0,
 ) -> dict[str, int]:
     thread_count = 1 if should_include_thread(plan_date, threads_per_week) else 0
-    reply_count = min(replies_per_day, 3, reply_target_count) if reply_target_count else 0
-    tweet_count = max(1, tweets_per_day - thread_count)
+
+    if growth_mode:
+        tweet_count = max(1, min(tweets_per_day, 1))
+        reply_count = min(replies_per_day, reply_target_count) if reply_target_count else 0
+        quote_count = min(quote_tweets_per_day, quote_target_count) if quote_target_count else 0
+    else:
+        reply_count = min(replies_per_day, 3, reply_target_count) if reply_target_count else 0
+        tweet_count = max(1, tweets_per_day - thread_count)
+        quote_count = 0
+
     return {
         "tweet_count": tweet_count,
         "thread_count": thread_count,
         "reply_count": reply_count,
-        "total": tweet_count + thread_count + reply_count,
+        "quote_count": quote_count,
+        "total": tweet_count + thread_count + reply_count + quote_count,
     }
 
 
@@ -68,10 +80,13 @@ def _enforce_plan_composition(
     tweet_count: int,
     thread_count: int,
     reply_count: int,
+    quote_count: int = 0,
     reply_targets: list[dict],
+    quote_targets: list[dict] | None = None,
 ) -> list[PlannedIdea]:
     """Force content_type by slot so the LLM cannot return all tweets."""
-    expected = tweet_count + thread_count + reply_count
+    quote_targets = quote_targets or []
+    expected = tweet_count + thread_count + reply_count + quote_count
     if len(ideas) < expected:
         raise LLMError(f"Expected {expected} ideas, got {len(ideas)}")
 
@@ -119,6 +134,21 @@ def _enforce_plan_composition(
         )
         idx += 1
 
+    for i in range(quote_count):
+        idea = ideas[idx]
+        target = quote_targets[i] if i < len(quote_targets) else None
+        enforced.append(
+            PlannedIdea(
+                content_type="quote_tweet",
+                category="engagement",
+                title=f"Quote @{target['author_handle']}" if target else idea.title,
+                hook_idea=target["tweet_text"][:120] if target else idea.hook_idea,
+                rationale=idea.rationale or "Add your take on a high-signal post",
+                reply_target_id=UUID(target["id"]) if target and target.get("id") else None,
+            )
+        )
+        idx += 1
+
     return enforced
 
 
@@ -130,8 +160,11 @@ def _template_plan(
     thread_count: int,
     reply_count: int,
     reply_targets: list[dict],
+    quote_count: int = 0,
+    quote_targets: list[dict] | None = None,
 ) -> list[PlannedIdea]:
     topics = interests[:3] or ["engineering"]
+    quote_targets = quote_targets or []
     ideas: list[PlannedIdea] = []
 
     for i in range(tweet_count):
@@ -167,6 +200,18 @@ def _template_plan(
                 title=f"Reply to @{target['author_handle']}",
                 hook_idea=target["tweet_text"][:120],
                 rationale="Engage with relevant conversation in your niche",
+                reply_target_id=UUID(target["id"]) if target.get("id") else None,
+            )
+        )
+
+    for i, target in enumerate(quote_targets[:quote_count]):
+        ideas.append(
+            PlannedIdea(
+                content_type="quote_tweet",
+                category="engagement",
+                title=f"Quote @{target['author_handle']}",
+                hook_idea=target["tweet_text"][:120],
+                rationale="Quote with your contrarian or supporting take",
                 reply_target_id=UUID(target["id"]) if target.get("id") else None,
             )
         )
@@ -210,15 +255,22 @@ async def plan_daily_content(
     tweets_per_day: int = 3,
     threads_per_week: int = 2,
     replies_per_day: int = 2,
+    quote_tweets_per_day: int = 0,
     plan_date: date | None = None,
     reply_targets: list[dict] | None = None,
+    quote_targets: list[dict] | None = None,
+    growth_mode: bool = True,
+    knowledge_context: list[dict] | None = None,
     session: AsyncSession | None = None,
     user_id: UUID | None = None,
     tone: list[str] | None = None,
     never_discuss: list[str] | None = None,
+    performance_hints: list[str] | None = None,
+    weight_hints: list[str] | None = None,
 ) -> tuple[list[PlannedIdea], dict]:
     plan_date = plan_date or date.today()
     reply_targets = reply_targets or []
+    quote_targets = quote_targets or []
 
     slots = plan_slot_counts(
         plan_date,
@@ -226,16 +278,22 @@ async def plan_daily_content(
         threads_per_week=threads_per_week,
         replies_per_day=replies_per_day,
         reply_target_count=len(reply_targets),
+        growth_mode=growth_mode,
+        quote_tweets_per_day=quote_tweets_per_day,
+        quote_target_count=len(quote_targets),
     )
     tweet_count = slots["tweet_count"]
     thread_count = slots["thread_count"]
     reply_count = slots["reply_count"]
+    quote_count = slots["quote_count"]
     total = slots["total"]
 
     base_metadata = {
         "tweet_count": tweet_count,
         "thread_count": thread_count,
         "reply_count": reply_count,
+        "quote_count": quote_count,
+        "growth_mode": growth_mode,
         "is_thread_day": thread_count > 0,
         "thread_days": thread_day_names(threads_per_week),
         "reply_targets_available": len(reply_targets),
@@ -251,6 +309,8 @@ async def plan_daily_content(
             thread_count,
             reply_count,
             reply_targets,
+            quote_count,
+            quote_targets,
         ), {**base_metadata, "llm_mode": "mock"}
 
     if session is None or user_id is None:
@@ -263,12 +323,17 @@ async def plan_daily_content(
             profession=profession,
             interests=interests,
             knowledge_titles=knowledge_titles,
+            knowledge_context=knowledge_context or [],
             tweet_count=tweet_count,
             thread_count=thread_count,
             reply_count=reply_count,
+            quote_count=quote_count,
             reply_targets=reply_targets,
+            quote_targets=quote_targets,
             tone=tone or [],
             never_discuss=never_discuss or [],
+            performance_hints=(performance_hints or []) + (weight_hints or []),
+            growth_mode=growth_mode,
         ),
         prompt_version=PROMPT_VERSION,
     )
@@ -278,7 +343,9 @@ async def plan_daily_content(
         tweet_count=tweet_count,
         thread_count=thread_count,
         reply_count=reply_count,
+        quote_count=quote_count,
         reply_targets=reply_targets,
+        quote_targets=quote_targets,
     )
     await record_llm_usage(session, user_id, completion.usage)
 

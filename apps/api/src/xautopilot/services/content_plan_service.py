@@ -11,7 +11,11 @@ from xautopilot.services.agents.content_planner import (
     plan_slot_counts,
     thread_day_names,
 )
-from xautopilot.services.ingestion_service import list_knowledge_items
+from xautopilot.services.analytics_service import build_reach_hints, build_bookmark_hints
+from xautopilot.services.ingestion_service import list_knowledge_items, list_timely_knowledge_items
+from xautopilot.services.learning_service import build_weight_hints
+from xautopilot.services.reply_discovery_service import import_discovered_targets
+from xautopilot.services.quote_discovery_service import discover_quote_opportunities
 from xautopilot.services.reply_target_service import list_active_reply_targets
 from xautopilot.services.schedule_service import get_schedule
 from xautopilot.services.voice_profile_service import get_active_voice_profile
@@ -36,11 +40,13 @@ async def get_plan_composition(
         plan.plan_date,
         tweets_per_day=schedule.tweets_per_day,
         threads_per_week=schedule.threads_per_week,
-        replies_per_day=min(schedule.replies_per_day, 3),
+        replies_per_day=schedule.replies_per_day,
         reply_target_count=len(targets),
+        growth_mode=schedule.growth_mode,
+        quote_tweets_per_day=schedule.quote_tweets_per_day,
     )
 
-    counts = {"tweet": 0, "thread": 0, "reply": 0}
+    counts = {"tweet": 0, "thread": 0, "reply": 0, "quote_tweet": 0}
     for idea in plan.ideas:
         if idea.content_type in counts:
             counts[idea.content_type] += 1
@@ -64,6 +70,8 @@ async def get_plan_composition(
         "tweets": counts["tweet"],
         "threads": counts["thread"],
         "replies": counts["reply"],
+        "quotes": counts["quote_tweet"],
+        "growth_mode": schedule.growth_mode,
         "thread_days": thread_day_names(schedule.threads_per_week),
         "is_thread_day": slots["thread_count"] > 0,
         "reply_targets_available": len(targets),
@@ -102,6 +110,7 @@ async def generate_daily_plan(
 
     items = await list_knowledge_items(session, user_id)
     titles = [item.title for item in items[:10]]
+    timely = await list_timely_knowledge_items(session, user_id)
     schedule = await get_schedule(session, user_id)
     targets = await list_active_reply_targets(session, user_id)
     target_payload = [
@@ -113,19 +122,44 @@ async def generate_daily_plan(
         for t in targets
     ]
 
+    quote_payload: list[dict] = []
+    if schedule.growth_mode and schedule.quote_tweets_per_day > 0:
+        quote_result = await discover_quote_opportunities(session, user_id, limit=3)
+        if quote_result.targets:
+            imported_quotes = await import_discovered_targets(session, user_id, quote_result.targets)
+            quote_payload = [
+                {
+                    "id": str(t.id),
+                    "author_handle": t.author_handle,
+                    "tweet_text": t.tweet_text,
+                }
+                for t in imported_quotes
+            ]
+
+    performance_hints = await build_reach_hints(session, user_id)
+    weight_hints: list[str] = []
+    if voice and voice.learned_weights:
+        weight_hints = build_weight_hints(voice.learned_weights)
+
     planned, _metadata = await plan_daily_content(
         profession,
         interests,
         titles,
         tweets_per_day=schedule.tweets_per_day,
         threads_per_week=schedule.threads_per_week,
-        replies_per_day=min(schedule.replies_per_day, 3),
+        replies_per_day=schedule.replies_per_day,
+        quote_tweets_per_day=schedule.quote_tweets_per_day if schedule.growth_mode else 0,
         plan_date=plan_date,
         reply_targets=target_payload,
+        quote_targets=quote_payload,
+        growth_mode=schedule.growth_mode,
+        knowledge_context=timely,
         session=session,
         user_id=user_id,
         tone=voice.tone if voice else [],
         never_discuss=voice.never_discuss if voice else [],
+        performance_hints=performance_hints,
+        weight_hints=weight_hints,
     )
 
     plan = ContentPlan(user_id=user_id, plan_date=plan_date, status="ready")

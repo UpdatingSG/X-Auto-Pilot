@@ -20,16 +20,42 @@ class DraftNotScheduledError(Exception):
     pass
 
 
-async def get_occupied_slots(session: AsyncSession, user_id: UUID, exclude_draft_id: UUID | None = None) -> list[datetime]:
-    query = select(Draft.scheduled_at).where(
-        Draft.user_id == user_id,
-        Draft.status == "scheduled",
-        Draft.scheduled_at.isnot(None),
+async def get_occupied_slots(
+    session: AsyncSession,
+    user_id: UUID,
+    exclude_draft_id: UUID | None = None,
+    content_types: list[str] | None = None,
+) -> list[datetime]:
+    query = (
+        select(Draft.scheduled_at)
+        .where(
+            Draft.user_id == user_id,
+            Draft.status == "scheduled",
+            Draft.scheduled_at.isnot(None),
+        )
     )
+    if content_types:
+        query = query.where(Draft.content_type.in_(content_types))
     if exclude_draft_id is not None:
         query = query.where(Draft.id != exclude_draft_id)
     result = await session.execute(query)
     return [_ensure_utc(row[0]) for row in result.all() if row[0]]
+
+
+def _quota_for_draft(schedule, content_type: str) -> int:
+    if content_type == "reply":
+        return schedule.replies_per_day
+    if content_type == "quote_tweet":
+        return schedule.quote_tweets_per_day
+    return schedule.tweets_per_day
+
+
+def _content_type_group(content_type: str) -> list[str]:
+    if content_type == "reply":
+        return ["reply"]
+    if content_type == "quote_tweet":
+        return ["quote_tweet"]
+    return ["tweet", "thread"]
 
 
 async def schedule_draft(
@@ -48,17 +74,23 @@ async def schedule_draft(
         raise DraftNotSchedulableError
 
     schedule = await get_schedule(session, user_id)
-    occupied = await get_occupied_slots(session, user_id, exclude_draft_id=draft_id)
+    type_group = _content_type_group(draft.content_type)
+    all_occupied = await get_occupied_slots(session, user_id, exclude_draft_id=draft_id)
+    type_occupied = await get_occupied_slots(
+        session, user_id, exclude_draft_id=draft_id, content_types=type_group
+    )
+    daily_quota = _quota_for_draft(schedule, draft.content_type)
 
     if scheduled_at is None:
         slot = allocate_slot(
             posting_windows=schedule.posting_windows,
-            occupied=occupied,
+            occupied=all_occupied,
             timezone=timezone,
             jitter_minutes=schedule.jitter_minutes,
             rng=rng,
             max_per_window=1,
-            daily_quota=schedule.tweets_per_day,
+            daily_quota=daily_quota,
+            daily_quota_occupied=type_occupied,
         )
     else:
         slot = scheduled_at.astimezone(UTC)

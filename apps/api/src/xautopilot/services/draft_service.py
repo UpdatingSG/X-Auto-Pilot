@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from xautopilot.models.content import ContentIdea, Draft, DraftVariant
+from xautopilot.services.agents.quote_agent import generate_quote_variations
 from xautopilot.services.agents.reply_agent import generate_reply_variations
 from xautopilot.services.agents.thread_writer import generate_thread_variations
 from xautopilot.services.agents.tweet_writer import generate_tweet_variations
@@ -28,6 +29,7 @@ async def _save_variants(
     tweet_variants: list | None = None,
     thread_variants: list | None = None,
     reply_variants: list | None = None,
+    quote_variants: list | None = None,
 ) -> None:
     if tweet_variants is not None:
         for i, variant in enumerate(tweet_variants):
@@ -63,6 +65,39 @@ async def _save_variants(
                     is_selected=i == 0,
                 )
             )
+    elif quote_variants is not None:
+        for i, variant in enumerate(quote_variants):
+            session.add(
+                DraftVariant(
+                    draft_id=draft.id,
+                    variant_index=i,
+                    content_text=variant.text,
+                    scores=variant.scores,
+                    is_selected=i == 0,
+                )
+            )
+
+
+async def _maybe_auto_schedule_reply(session: AsyncSession, user_id: UUID, draft: Draft) -> Draft:
+    from xautopilot.services.publish_service import schedule_draft
+    from xautopilot.services.schedule_service import get_schedule
+
+    schedule = await get_schedule(session, user_id)
+    if draft.content_type != "reply" or not schedule.auto_schedule_replies:
+        return draft
+    if not draft.variants:
+        return draft
+    best = draft.variants[0]
+    draft.selected_variant_id = best.id
+    for variant in draft.variants:
+        variant.is_selected = variant.id == best.id
+    draft.status = "approved"
+    await session.flush()
+    try:
+        await schedule_draft(session, user_id, draft.id)
+    except Exception:
+        await session.commit()
+    return await get_draft(session, user_id, draft.id)
 
 
 async def generate_draft_from_idea(
@@ -81,8 +116,8 @@ async def generate_draft_from_idea(
     avoid = voice.vocabulary.get("avoid", []) if voice else []
     profession = voice.profession if voice else "Creator"
     tone = voice.tone if voice else []
-    hashtag_prefs = voice.hashtag_prefs if voice else {"max_per_tweet": 2, "favorites": []}
-    max_hashtags = int(hashtag_prefs.get("max_per_tweet", 2))
+    hashtag_prefs = voice.hashtag_prefs if voice else {"max_per_tweet": 1, "favorites": []}
+    max_hashtags = min(int(hashtag_prefs.get("max_per_tweet", 1)), 2)
     favorite_hashtags = list(hashtag_prefs.get("favorites", []))
 
     draft = Draft(
@@ -96,6 +131,9 @@ async def generate_draft_from_idea(
     await session.flush()
 
     if idea.content_type == "thread":
+        from xautopilot.services.analytics_service import build_bookmark_hints
+
+        bookmark_hints = await build_bookmark_hints(session, user_id)
         variations, metadata = await generate_thread_variations(
             title=idea.title,
             hook_idea=idea.hook_idea or "",
@@ -107,6 +145,7 @@ async def generate_draft_from_idea(
             tone=tone,
             max_hashtags=max_hashtags,
             favorite_hashtags=favorite_hashtags,
+            bookmark_hints=bookmark_hints,
         )
         await _save_variants(session, draft, thread_variants=variations)
     elif idea.content_type == "reply":
@@ -125,6 +164,22 @@ async def generate_draft_from_idea(
         metadata["reply_target_id"] = str(target.id)
         metadata["x_tweet_id"] = target.x_tweet_id
         await _save_variants(session, draft, reply_variants=variations)
+    elif idea.content_type == "quote_tweet":
+        if not idea.reply_target_id:
+            raise IdeaNotFoundError
+        target = await get_reply_target(session, user_id, idea.reply_target_id)
+        variations, metadata = await generate_quote_variations(
+            author_handle=target.author_handle,
+            target_tweet=target.tweet_text,
+            profession=profession,
+            vocabulary_avoid=avoid,
+            session=session,
+            user_id=user_id,
+            tone=tone,
+        )
+        metadata["reply_target_id"] = str(target.id)
+        metadata["quote_tweet_id"] = target.x_tweet_id
+        await _save_variants(session, draft, quote_variants=variations)
     else:
         variations, metadata = await generate_tweet_variations(
             title=idea.title,
@@ -186,7 +241,8 @@ async def generate_reply_draft_from_target(
 
     draft.status = "ready"
     await session.commit()
-    return await get_draft(session, user_id, draft.id)
+    draft = await get_draft(session, user_id, draft.id)
+    return await _maybe_auto_schedule_reply(session, user_id, draft)
 
 
 async def get_draft(session: AsyncSession, user_id: UUID, draft_id: UUID) -> Draft:

@@ -10,8 +10,12 @@ const WINDOW_LABELS = ["Morning", "Afternoon", "Evening"];
 
 export default function ScheduleSettingsPage() {
   const [schedule, setSchedule] = useState<Schedule | null>(null);
-  const [tweetsPerDay, setTweetsPerDay] = useState(3);
+  const [tweetsPerDay, setTweetsPerDay] = useState(1);
+  const [repliesPerDay, setRepliesPerDay] = useState(10);
+  const [threadsPerWeek, setThreadsPerWeek] = useState(1);
   const [jitterMinutes, setJitterMinutes] = useState(15);
+  const [growthMode, setGrowthMode] = useState(true);
+  const [autoScheduleReplies, setAutoScheduleReplies] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -21,7 +25,11 @@ export default function ScheduleSettingsPage() {
     api.getSchedule(token).then((s) => {
       setSchedule(s);
       setTweetsPerDay(s.tweets_per_day);
+      setRepliesPerDay(s.replies_per_day);
+      setThreadsPerWeek(s.threads_per_week);
       setJitterMinutes(s.jitter_minutes);
+      setGrowthMode(s.growth_mode);
+      setAutoScheduleReplies(s.auto_schedule_replies);
     });
   }, []);
 
@@ -34,7 +42,11 @@ export default function ScheduleSettingsPage() {
     try {
       const updated = await api.updateSchedule(token, {
         tweets_per_day: tweetsPerDay,
+        replies_per_day: repliesPerDay,
+        threads_per_week: threadsPerWeek,
         jitter_minutes: jitterMinutes,
+        growth_mode: growthMode,
+        auto_schedule_replies: autoScheduleReplies,
       });
       setSchedule(updated);
       setMessage("Schedule settings saved");
@@ -46,8 +58,8 @@ export default function ScheduleSettingsPage() {
   return (
     <AppShell title="Posting Schedule">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Configure when X-Autopilot may post. Approved drafts are placed into these windows
-        with random jitter so posts feel human, not robotic.
+        Growth mode prioritizes replies over broadcasting. Replies use their own daily quota and can
+        auto-schedule when drafts are generated from the Engagement or Briefing pages.
       </p>
 
       {schedule && (
@@ -65,8 +77,28 @@ export default function ScheduleSettingsPage() {
       )}
 
       <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={growthMode}
+            onChange={(e) => setGrowthMode(e.target.checked)}
+            className="rounded"
+          />
+          <span className="text-sm text-zinc-300">Growth mode (reply-first planning)</span>
+        </label>
         <label className="block">
-          <span className="text-sm text-zinc-400">Tweets per day</span>
+          <span className="text-sm text-zinc-400">Replies per day</span>
+          <input
+            type="number"
+            min={0}
+            max={50}
+            value={repliesPerDay}
+            onChange={(e) => setRepliesPerDay(Number(e.target.value))}
+            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2"
+          />
+        </label>
+        <label className="block">
+          <span className="text-sm text-zinc-400">Original tweets per day</span>
           <input
             type="number"
             min={1}
@@ -75,6 +107,26 @@ export default function ScheduleSettingsPage() {
             onChange={(e) => setTweetsPerDay(Number(e.target.value))}
             className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2"
           />
+        </label>
+        <label className="block">
+          <span className="text-sm text-zinc-400">Threads per week</span>
+          <input
+            type="number"
+            min={0}
+            max={14}
+            value={threadsPerWeek}
+            onChange={(e) => setThreadsPerWeek(Number(e.target.value))}
+            className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2"
+          />
+        </label>
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={autoScheduleReplies}
+            onChange={(e) => setAutoScheduleReplies(e.target.checked)}
+            className="rounded"
+          />
+          <span className="text-sm text-zinc-300">Auto-schedule reply drafts after generation</span>
         </label>
         <label className="block">
           <span className="text-sm text-zinc-400">Jitter (minutes)</span>
@@ -86,9 +138,6 @@ export default function ScheduleSettingsPage() {
             onChange={(e) => setJitterMinutes(Number(e.target.value))}
             className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2"
           />
-          <p className="mt-1 text-xs text-zinc-500">
-            Random offset so posts land at 9:07 instead of exactly 9:00.
-          </p>
         </label>
         <button
           type="submit"

@@ -11,6 +11,8 @@ class PlanComposition(BaseModel):
     tweets: int = 0
     threads: int = 0
     replies: int = 0
+    quotes: int = 0
+    growth_mode: bool = True
     thread_days: list[str] = []
     is_thread_day: bool = False
     reply_targets_available: int = 0

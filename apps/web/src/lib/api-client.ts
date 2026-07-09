@@ -30,6 +30,7 @@ export type VoiceProfile = {
   tone: string[];
   personality: string[];
   vocabulary: { use: string[]; avoid: string[] };
+  favorite_creators?: { handle: string; note?: string }[];
   never_discuss: string[];
   audience_type: string | null;
   created_at: string;
@@ -85,10 +86,22 @@ export type ReplyTarget = {
   expires_at: string | null;
 };
 
+export type DiscoveredReplyTarget = {
+  x_tweet_id: string;
+  x_user_id: string;
+  author_handle: string;
+  tweet_text: string;
+  author_followers: number;
+  likes: number;
+  relevance_score: number;
+};
+
 export type PlanComposition = {
   tweets: number;
   threads: number;
   replies: number;
+  quotes?: number;
+  growth_mode?: boolean;
   thread_days: string[];
   is_thread_day: boolean;
   reply_targets_available: number;
@@ -139,6 +152,8 @@ export type Schedule = {
   jitter_minutes: number;
   require_approval: boolean;
   is_active: boolean;
+  growth_mode: boolean;
+  auto_schedule_replies: boolean;
 };
 
 export type QueueItem = {
@@ -199,8 +214,63 @@ export type PostAnalyticsItem = {
   x_tweet_id: string;
   preview_text: string | null;
   category: string | null;
+  content_type?: string | null;
   published_at: string;
   metrics: PostMetricsSnapshot | null;
+};
+
+export type BriefingResponse = {
+  date: string;
+  growth_mode: boolean;
+  targets: {
+    replies_goal: number;
+    replies_sent: number;
+    tweets_goal: number;
+    tweets_sent: number;
+    threads_goal: number;
+    threads_sent: number;
+  };
+  fresh_opportunities: {
+    x_tweet_id: string;
+    author_handle: string;
+    tweet_text: string;
+    author_followers: number;
+    likes: number;
+    relevance_score: number;
+    source: string;
+    reply_target_id?: string | null;
+    has_draft?: boolean;
+  }[];
+  saved_targets: BriefingResponse["fresh_opportunities"];
+  actions: { priority: string; action: string; detail: string }[];
+  hints: string[];
+  discovery_message?: string | null;
+};
+
+export type GrowthDashboard = {
+  growth_mode: boolean;
+  period: string;
+  daily_targets: Record<string, number>;
+  today_counts: Record<string, number>;
+  week_counts: Record<string, number>;
+  follower_delta_7d: number | null;
+  content_breakdown: {
+    content_type: string;
+    count: number;
+    avg_impressions: number;
+    avg_engagement_rate: number;
+    avg_bookmarks: number;
+  }[];
+  reply_performance: {
+    post_id: string;
+    preview_text: string | null;
+    impressions: number;
+    likes: number;
+    replies: number;
+    engagement_rate: number;
+    published_at: string;
+  }[];
+  streak: { reply_days: number };
 };
 
 export type AnalyticsInsights = {
@@ -428,11 +498,58 @@ export const api = {
 
   createReplyTarget: (
     token: string,
-    data: { author_handle: string; tweet_text: string; x_tweet_id?: string },
+    data: { author_handle: string; tweet_text: string; x_tweet_id: string },
   ) =>
     request<ReplyTarget>(
       "/v1/reply-targets",
       { method: "POST", body: JSON.stringify(data) },
+      token,
+    ),
+
+  discoverReplyTargets: (
+    token: string,
+    data?: { min_followers?: number; limit?: number; topics?: string[] },
+  ) =>
+    request<{ source: string; message?: string; targets: DiscoveredReplyTarget[] }>(
+      "/v1/reply-targets/discover",
+      { method: "POST", body: JSON.stringify(data ?? {}) },
+      token,
+    ),
+
+  discoverWatchlistTargets: (token: string) =>
+    request<{ source: string; message?: string; targets: DiscoveredReplyTarget[] }>(
+      "/v1/reply-targets/discover/watchlist",
+      { method: "POST", body: "{}" },
+      token,
+    ),
+
+  discoverQuoteOpportunities: (token: string) =>
+    request<{ source: string; message?: string; targets: DiscoveredReplyTarget[] }>(
+      "/v1/reply-targets/discover/quotes",
+      { method: "POST", body: "{}" },
+      token,
+    ),
+
+  getDailyBriefing: (token: string) =>
+    request<BriefingResponse>("/v1/growth/briefing", {}, token),
+
+  getGrowthDashboard: (token: string) =>
+    request<GrowthDashboard>("/v1/growth/dashboard", {}, token),
+
+  runLearningCycle: (token: string) =>
+    request<{ applied: boolean }>("/v1/growth/learn", { method: "POST", body: "{}" }, token),
+
+  importReplyTargets: (token: string, targets: DiscoveredReplyTarget[]) =>
+    request<{ imported: number; targets: ReplyTarget[] }>(
+      "/v1/reply-targets/discover/import",
+      { method: "POST", body: JSON.stringify({ targets }) },
+      token,
+    ),
+
+  importReplyTargetFromUrl: (token: string, url: string) =>
+    request<ReplyTarget>(
+      "/v1/reply-targets/from-url/import",
+      { method: "POST", body: JSON.stringify({ url }) },
       token,
     ),
 

@@ -38,6 +38,7 @@ class PostAnalyticsItem(BaseModel):
     x_tweet_id: str
     preview_text: str | None
     category: str | None
+    content_type: str | None = None
     published_at: datetime
     metrics: PostMetricsSnapshot | None = None
 
