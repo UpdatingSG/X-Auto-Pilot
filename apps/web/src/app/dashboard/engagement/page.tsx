@@ -129,14 +129,14 @@ export default function EngagementPage() {
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const token = getToken();
-    if (!token || !handle.trim() || !tweetText.trim()) return;
+    if (!token || !handle.trim() || !tweetText.trim() || !tweetId.trim()) return;
     setError(null);
     setMessage(null);
     try {
       await api.createReplyTarget(token, {
         author_handle: handle.trim(),
         tweet_text: tweetText.trim(),
-        x_tweet_id: tweetId.trim() || undefined,
+        x_tweet_id: tweetId.trim(),
       });
       setHandle("");
       setTweetText("");
