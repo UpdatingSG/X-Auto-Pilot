@@ -148,4 +148,4 @@ Oracle path: see [DEPLOYMENT.md](DEPLOYMENT.md) Path B — use Neon for DB, skip
 | CORS errors | `CORS_ORIGINS` must match Vercel URL exactly |
 | X OAuth fails | Callback must match `X_REDIRECT_URI` |
 | DB errors | URL must be `postgresql+asyncpg://...?sslmode=require` |
-| Scheduled posts never publish | Render free API sleeps — worker stops. Set `WORKER_CRON_SECRET` on Render, then ping `POST /v1/worker/tick` every 10 min (e.g. [cron-job.org](https://cron-job.org)) with header `X-Worker-Secret`. Or use **Publish now** on the queue page. |
+| Scheduled posts never publish | Render free API **sleeps after ~15 min** with no traffic. Browsing the app keeps it awake; when you close the tab, cron fails. **Fix:** (1) cron-job.org GET `/ping` every **5 min**; (2) GET `/v1/worker/cron?secret=...` or POST `/v1/worker/tick` with `X-Worker-Secret` every 15 min. Set `WORKER_CRON_SECRET` on Render. Without keep-alive, cron shows **Failed (output too large)** (Render cold-start HTML). |

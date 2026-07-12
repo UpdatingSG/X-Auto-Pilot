@@ -69,11 +69,32 @@ export default function PublishQueuePage() {
   return (
     <AppShell title="Publish Queue">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Scheduled drafts waiting to go live. Overdue posts publish when the API worker runs
-        (every minute while the server is awake). On Render&apos;s free tier the API sleeps
-        after ~15 min idle — use <strong className="text-zinc-200">Publish now</strong> or set
-        up a cron ping to <code className="text-sky-300">POST /v1/worker/tick</code>.
+        Scheduled drafts waiting to go live. Overdue posts publish when the API worker runs.
+        On Render&apos;s <strong className="text-zinc-200">free tier</strong> the API sleeps after
+        ~15 minutes with no traffic — browsing this site keeps it awake; when you close the tab,
+        scheduled jobs fail unless you set up external cron.
       </p>
+
+      <div className="mb-6 rounded-xl border border-sky-800/50 bg-sky-950/30 p-4 text-sm text-sky-100">
+        <p className="font-medium text-sky-200">Render free tier: use two cron-job.org jobs</p>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sky-100/90">
+          <li>
+            <strong>Keep-alive</strong> — GET{" "}
+            <code className="text-sky-300">https://xautopilot-api.onrender.com/ping</code> every{" "}
+            <strong>5 minutes</strong> (prevents sleep; response is just <code>ok</code>)
+          </li>
+          <li>
+            <strong>Publish worker</strong> — GET{" "}
+            <code className="text-sky-300">https://xautopilot-api.onrender.com/v1/worker/cron?secret=YOUR_SECRET</code>{" "}
+            every <strong>15 minutes</strong> (or POST <code>/v1/worker/tick</code> with header{" "}
+            <code>X-Worker-Secret</code>)
+          </li>
+        </ol>
+        <p className="mt-2 text-sky-200/80">
+          Set <code className="text-sky-300">WORKER_CRON_SECRET</code> on Render to match your secret.
+          Without the 5-minute keep-alive, cron fails with &quot;output too large&quot; when Render wakes from sleep.
+        </p>
+      </div>
 
       {!account && (
         <div className="mb-6 rounded-xl border border-amber-800/50 bg-amber-950/30 p-4 text-sm text-amber-200">

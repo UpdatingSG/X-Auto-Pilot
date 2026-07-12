@@ -80,3 +80,24 @@ async def test_worker_status_endpoint(client: AsyncClient):
     body = response.json()
     assert body["tick_interval_seconds"] == 60
     assert "manual_tick_enabled" in body
+    assert "cron_tick_configured" in body
+
+
+async def test_worker_cron_returns_plaintext_ok(client: AsyncClient):
+    response = await client.get("/v1/worker/cron")
+    assert response.status_code == 200
+    assert response.text == "ok"
+    assert response.headers["content-type"].startswith("text/plain")
+
+
+async def test_worker_tick_compact_json_with_cron_secret(client: AsyncClient, monkeypatch):
+    from xautopilot.config import settings
+
+    monkeypatch.setattr(settings, "worker_cron_secret", "test-cron-secret")
+    response = await client.post(
+        "/v1/worker/tick",
+        headers={"X-Worker-Secret": "test-cron-secret"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {"ok": True, "p": 0, "f": 0, "m": 0}

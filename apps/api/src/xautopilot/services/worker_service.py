@@ -45,6 +45,15 @@ class WorkerTickSummary:
             "errors": self.errors or [],
         }
 
+    def to_cron_dict(self) -> dict:
+        """Tiny JSON for external cron (cron-job.org rejects large bodies)."""
+        return {
+            "ok": True,
+            "p": self.published_ok,
+            "f": self.published_failed,
+            "m": self.metrics_ok,
+        }
+
 
 @dataclass
 class PublishTickResult:

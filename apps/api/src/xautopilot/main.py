@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 
@@ -116,6 +116,12 @@ app.include_router(worker.router)
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "xautopilot-api"}
+
+
+@app.get("/ping")
+async def ping():
+    """Keep-alive for Render free tier (must be pinged every ~5 min while idle)."""
+    return PlainTextResponse("ok")
 
 
 @app.get("/health/config")
