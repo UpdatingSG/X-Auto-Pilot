@@ -39,6 +39,9 @@ class DiscoveredTweet:
     author_followers: int
     likes: int
     relevance_score: float = 0.0
+    reply_allowed: bool = True
+    reply_block_reason: str | None = None
+    reply_settings: str | None = None
 
 
 class XApiError(Exception):
@@ -81,7 +84,9 @@ class XClient(Protocol):
         self, access_token: str, username: str, *, max_results: int = 5
     ) -> list[DiscoveredTweet]: ...
 
-    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet: ...
+    async def lookup_tweet(
+        self, access_token: str, tweet_id: str, *, viewer_x_user_id: str | None = None
+    ) -> DiscoveredTweet: ...
 
 
 def _retry_after_seconds(response: httpx.Response) -> int | None:
@@ -238,8 +243,10 @@ class MockXClient:
             for idx in range(max_results)
         ]
 
-    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet:
-        del access_token
+    async def lookup_tweet(
+        self, access_token: str, tweet_id: str, *, viewer_x_user_id: str | None = None
+    ) -> DiscoveredTweet:
+        del access_token, viewer_x_user_id
         return DiscoveredTweet(
             x_tweet_id=tweet_id,
             x_user_id="mock-user",
@@ -337,7 +344,9 @@ class LiveXClient:
             quotes=quotes,
         )
 
-    def _parse_discovered_tweets(self, payload: dict) -> list[DiscoveredTweet]:
+    def _parse_discovered_tweets(
+        self, payload: dict, *, viewer_x_user_id: str | None = None
+    ) -> list[DiscoveredTweet]:
         raw_data = payload.get("data")
         if not raw_data:
             tweets: list[dict] = []
@@ -359,6 +368,7 @@ class LiveXClient:
             metrics = tweet.get("public_metrics") or {}
             username = author.get("username") or "unknown"
             user_metrics = author.get("public_metrics") or {}
+            reply_allowed, reply_block_reason = self._reply_eligibility(tweet, author, viewer_x_user_id)
             discovered.append(
                 DiscoveredTweet(
                     x_tweet_id=str(tweet["id"]),
@@ -367,12 +377,22 @@ class LiveXClient:
                     tweet_text=str(tweet.get("text") or ""),
                     author_followers=int(user_metrics.get("followers_count") or 0),
                     likes=int(metrics.get("like_count") or 0),
+                    reply_allowed=reply_allowed,
+                    reply_block_reason=reply_block_reason,
+                    reply_settings=tweet.get("reply_settings"),
                 )
             )
         return discovered
 
+    def _reply_eligibility(
+        self, tweet: dict, author_user: dict, viewer_x_user_id: str | None
+    ) -> tuple[bool, str | None]:
+        from xautopilot.services.reply_eligibility_service import assess_reply_eligibility
+
+        return assess_reply_eligibility(tweet, author_user, viewer_x_user_id)
+
     async def search_recent_tweets(
-        self, access_token: str, *, query: str, max_results: int = 10
+        self, access_token: str, *, query: str, max_results: int = 10, viewer_x_user_id: str | None = None
     ) -> list[DiscoveredTweet]:
         response = await _live_request(
             "GET",
@@ -381,15 +401,15 @@ class LiveXClient:
             params={
                 "query": query,
                 "max_results": max(10, min(max_results, 100)),
-                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "tweet.fields": "author_id,created_at,public_metrics,text,reply_settings,entities",
                 "expansions": "author_id",
-                "user.fields": "username,public_metrics",
+                "user.fields": "username,public_metrics,connection_status",
             },
         )
-        return self._parse_discovered_tweets(response.json())
+        return self._parse_discovered_tweets(response.json(), viewer_x_user_id=viewer_x_user_id)
 
     async def get_user_recent_tweets(
-        self, access_token: str, username: str, *, max_results: int = 5
+        self, access_token: str, username: str, *, max_results: int = 5, viewer_x_user_id: str | None = None
     ) -> list[DiscoveredTweet]:
         user_response = await _live_request(
             "GET",
@@ -405,30 +425,34 @@ class LiveXClient:
             params={
                 "max_results": max(5, min(max_results, 10)),
                 "exclude": "retweets,replies",
-                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "tweet.fields": "author_id,created_at,public_metrics,text,reply_settings,entities",
                 "expansions": "author_id",
-                "user.fields": "username,public_metrics",
+                "user.fields": "username,public_metrics,connection_status",
             },
         )
-        discovered = self._parse_discovered_tweets(tweets_response.json())
+        discovered = self._parse_discovered_tweets(
+            tweets_response.json(), viewer_x_user_id=viewer_x_user_id
+        )
         followers = int((user.get("public_metrics") or {}).get("followers_count") or 0)
         for tweet in discovered:
             if tweet.author_followers <= 0:
                 tweet.author_followers = followers
         return discovered
 
-    async def lookup_tweet(self, access_token: str, tweet_id: str) -> DiscoveredTweet:
+    async def lookup_tweet(
+        self, access_token: str, tweet_id: str, *, viewer_x_user_id: str | None = None
+    ) -> DiscoveredTweet:
         response = await _live_request(
             "GET",
             f"{settings.x_api_base_url}/tweets/{tweet_id}",
             access_token,
             params={
-                "tweet.fields": "author_id,created_at,public_metrics,text",
+                "tweet.fields": "author_id,created_at,public_metrics,text,reply_settings,entities",
                 "expansions": "author_id",
-                "user.fields": "username,public_metrics",
+                "user.fields": "username,public_metrics,connection_status",
             },
         )
-        tweets = self._parse_discovered_tweets(response.json())
+        tweets = self._parse_discovered_tweets(response.json(), viewer_x_user_id=viewer_x_user_id)
         if not tweets:
             raise XApiError("Tweet not found", status_code=404)
         return tweets[0]

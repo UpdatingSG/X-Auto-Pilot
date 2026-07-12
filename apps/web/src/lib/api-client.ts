@@ -7,7 +7,8 @@ function getApiBaseUrl(): string {
   if (host === "localhost" || host === "127.0.0.1") {
     return "http://localhost:8000";
   }
-  return "";
+  // Call Render directly from the browser to avoid Vercel rewrite timeouts (ROUTER_EXTERNAL_TARGET_ERROR).
+  return "https://xautopilot-api.onrender.com";
 }
 
 export type User = {
@@ -62,6 +63,7 @@ export type FetchResult = {
 export type TokenResponse = {
   access_token: string;
   token_type: string;
+  email?: string;
 };
 
 export type ContentIdea = {
@@ -84,6 +86,8 @@ export type ReplyTarget = {
   relevance_score: number | null;
   discovered_at: string;
   expires_at: string | null;
+  reply_allowed?: boolean;
+  reply_block_reason?: string | null;
 };
 
 export type DiscoveredReplyTarget = {
@@ -94,6 +98,8 @@ export type DiscoveredReplyTarget = {
   author_followers: number;
   likes: number;
   relevance_score: number;
+  reply_allowed?: boolean;
+  reply_block_reason?: string | null;
 };
 
 export type PlanComposition = {
@@ -551,7 +557,11 @@ export const api = {
     request<GrowthDashboard>("/v1/growth/dashboard", {}, token),
 
   runLearningCycle: (token: string) =>
-    request<{ applied: boolean }>("/v1/growth/learn", { method: "POST", body: "{}" }, token),
+    request<{ applied: boolean; reason?: string; message?: string }>(
+      "/v1/growth/learn",
+      { method: "POST", body: "{}" },
+      token,
+    ),
 
   importReplyTargets: (token: string, targets: DiscoveredReplyTarget[]) =>
     request<{ imported: number; targets: ReplyTarget[] }>(

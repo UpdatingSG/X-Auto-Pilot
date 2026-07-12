@@ -11,10 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.config import settings
 from xautopilot.models.reply_target import ReplyTarget
-from xautopilot.services.reply_target_service import create_reply_target
+from xautopilot.services.reply_target_service import (
+    _reply_context_metadata,
+    create_reply_target,
+)
 from xautopilot.services.voice_profile_service import get_active_voice_profile
+from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import DiscoveredTweet, XApiError, get_x_client
-from xautopilot.services.x_account_service import XAccountNotFoundError
 from xautopilot.services.x_token_service import XAccountNeedsReauthError, get_valid_access_token
 
 
@@ -100,6 +103,14 @@ async def _existing_tweet_ids(session: AsyncSession, user_id) -> set[str]:
     return {row[0] for row in result.all()}
 
 
+async def _viewer_x_user_id(session: AsyncSession, user_id) -> str | None:
+    try:
+        account = await get_x_account(session, user_id)
+        return account.x_user_id
+    except XAccountNotFoundError:
+        return None
+
+
 async def discover_reply_targets(
     session: AsyncSession,
     user_id,
@@ -139,6 +150,7 @@ async def discover_reply_targets(
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account in Settings before discovering targets.") from exc
 
+    viewer_id = await _viewer_x_user_id(session, user_id)
     candidates: list[DiscoveredTweet] = []
     source = "search"
     message: str | None = None
@@ -149,6 +161,7 @@ async def discover_reply_targets(
             access_token,
             query=query,
             max_results=min(limit * 3, 50),
+            viewer_x_user_id=viewer_id,
         )
     except Exception as exc:
         source = "curated_accounts"
@@ -157,7 +170,9 @@ async def discover_reply_targets(
         )
         for handle in CURATED_ACCOUNTS:
             try:
-                tweets = await client.get_user_recent_tweets(access_token, handle, max_results=5)
+                tweets = await client.get_user_recent_tweets(
+                    access_token, handle, max_results=5, viewer_x_user_id=viewer_id
+                )
                 candidates.extend(tweets)
             except Exception:
                 continue
@@ -232,11 +247,14 @@ async def discover_from_watchlist(
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account before checking watchlist.") from exc
 
+    viewer_id = await _viewer_x_user_id(session, user_id)
     topic_list = [i["topic"] for i in (voice.interests if voice else []) if i.get("topic")]
     candidates: list[DiscoveredTweet] = []
     for handle in handles:
         try:
-            tweets = await client.get_user_recent_tweets(access_token, handle, max_results=3)
+            tweets = await client.get_user_recent_tweets(
+                access_token, handle, max_results=3, viewer_x_user_id=viewer_id
+            )
             candidates.extend(tweets)
         except Exception:
             continue
@@ -352,8 +370,9 @@ async def lookup_reply_target_from_url(
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account in Settings before importing from URL.") from exc
 
+    viewer_id = await _viewer_x_user_id(session, user_id)
     try:
-        tweet = await client.lookup_tweet(access_token, tweet_id)
+        tweet = await client.lookup_tweet(access_token, tweet_id, viewer_x_user_id=viewer_id)
     except XApiError as exc:
         raise ReplyDiscoveryError(str(exc)) from exc
     if tweet.author_handle.lower() != handle.lower():
@@ -379,6 +398,11 @@ async def import_discovered_targets(
                 tweet_text=target.tweet_text,
                 x_tweet_id=target.x_tweet_id,
                 x_user_id=target.x_user_id,
+                conversation_context=_reply_context_metadata(
+                    reply_allowed=target.reply_allowed,
+                    reply_block_reason=target.reply_block_reason,
+                    reply_settings=target.reply_settings,
+                ),
             )
         )
         existing.add(target.x_tweet_id)

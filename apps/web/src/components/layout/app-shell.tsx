@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api-client";
-import { clearToken, getToken } from "@/lib/auth";
+import { clearToken, getToken, getUserEmail, saveUserEmail } from "@/lib/auth";
 
 const navItems = [
   { href: "/dashboard/briefing", label: "★ Daily Briefing" },
@@ -25,7 +25,7 @@ const navItems = [
 export function AppShell({ children, title }: { children: React.ReactNode; title: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [email, setEmail] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(() => getUserEmail());
 
   useEffect(() => {
     const token = getToken();
@@ -33,10 +33,15 @@ export function AppShell({ children, title }: { children: React.ReactNode; title
       router.replace("/login");
       return;
     }
-    api.me(token).then((u) => setEmail(u.email)).catch(() => {
-      clearToken();
-      router.replace("/login");
-    });
+    api.me(token)
+      .then((u) => {
+        setEmail(u.email);
+        saveUserEmail(u.email);
+      })
+      .catch(() => {
+        clearToken();
+        router.replace("/login");
+      });
   }, [router]);
 
   function handleLogout() {

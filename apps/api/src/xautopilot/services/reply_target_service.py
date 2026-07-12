@@ -5,7 +5,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.models.reply_target import ReplyTarget
+from xautopilot.services.reply_eligibility_service import reply_meta_from_context
 from xautopilot.services.x_tweet_id import is_valid_x_tweet_id, normalize_x_tweet_id
+
+
+def _reply_context_metadata(
+    *,
+    reply_allowed: bool = True,
+    reply_block_reason: str | None = None,
+    reply_settings: str | None = None,
+) -> dict:
+    return {
+        "reply_allowed": reply_allowed,
+        "reply_block_reason": reply_block_reason,
+        "reply_settings": reply_settings,
+    }
 
 
 class ReplyTargetNotFoundError(Exception):
@@ -49,7 +63,7 @@ async def create_reply_target(
     tweet_text: str,
     x_tweet_id: str | None = None,
     x_user_id: str = "unknown",
-    conversation_context: list | None = None,
+    conversation_context: dict | list | None = None,
 ) -> ReplyTarget:
     handle = author_handle.lstrip("@")
     if not x_tweet_id or not is_valid_x_tweet_id(x_tweet_id):
@@ -63,7 +77,9 @@ async def create_reply_target(
         x_user_id=x_user_id,
         author_handle=handle,
         tweet_text=tweet_text,
-        conversation_context=conversation_context or [],
+        conversation_context=conversation_context
+        if conversation_context is not None
+        else _reply_context_metadata(),
         expires_at=datetime.now(UTC) + timedelta(hours=48),
     )
     session.add(target)
@@ -124,6 +140,11 @@ async def repair_reply_target_from_url(
     target.author_handle = tweet.author_handle.lstrip("@")
     if tweet.tweet_text.strip():
         target.tweet_text = tweet.tweet_text
+    target.conversation_context = _reply_context_metadata(
+        reply_allowed=tweet.reply_allowed,
+        reply_block_reason=tweet.reply_block_reason,
+        reply_settings=tweet.reply_settings,
+    )
     target.expires_at = datetime.now(UTC) + timedelta(hours=48)
     await session.commit()
     await session.refresh(target)
@@ -132,3 +153,33 @@ async def repair_reply_target_from_url(
 
 def target_is_publishable(target: ReplyTarget) -> bool:
     return is_valid_x_tweet_id(target.x_tweet_id)
+
+
+def target_can_reply(target: ReplyTarget) -> bool:
+    meta = reply_meta_from_context(target.conversation_context)
+    if "reply_allowed" in meta:
+        return bool(meta["reply_allowed"])
+    return True
+
+
+def target_reply_block_reason(target: ReplyTarget) -> str | None:
+    meta = reply_meta_from_context(target.conversation_context)
+    reason = meta.get("reply_block_reason")
+    return str(reason) if reason else None
+
+
+def to_reply_target_response(target: ReplyTarget):
+    from xautopilot.schemas.reply_target import ReplyTargetResponse
+
+    return ReplyTargetResponse(
+        id=target.id,
+        author_handle=target.author_handle,
+        tweet_text=target.tweet_text,
+        x_tweet_id=target.x_tweet_id,
+        x_user_id=target.x_user_id,
+        relevance_score=target.relevance_score,
+        discovered_at=target.discovered_at,
+        expires_at=target.expires_at,
+        reply_allowed=target_can_reply(target),
+        reply_block_reason=target_reply_block_reason(target),
+    )

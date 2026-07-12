@@ -205,14 +205,15 @@ async def run_quick_reply_workflow(
         discover_reply_targets,
         import_discovered_targets,
     )
-    from xautopilot.services.reply_target_service import target_is_publishable
+    from xautopilot.services.reply_target_service import target_can_reply, target_is_publishable
 
     discovery = await discover_reply_targets(session, user_id, limit=8)
     if not discovery.targets:
         return {"imported": 0, "drafted": 0, "message": "No fresh reply opportunities found right now."}
 
     imported = await import_discovered_targets(session, user_id, discovery.targets[:5])
-    publishable = [t for t in imported if target_is_publishable(t)]
+    publishable = [t for t in imported if target_is_publishable(t) and target_can_reply(t)]
+    blocked = len(imported) - len(publishable)
     drafted = 0
     for target in publishable[:limit]:
         await generate_reply_draft_from_target(session, user_id, target.id)
@@ -222,5 +223,13 @@ async def run_quick_reply_workflow(
         "imported": len(imported),
         "drafted": drafted,
         "skipped_invalid": len(imported) - len(publishable),
-        "message": f"Imported {len(imported)} targets and created {drafted} reply drafts.",
+        "skipped_reply_blocked": blocked,
+        "message": (
+            f"Imported {len(imported)} targets and created {drafted} reply drafts."
+            + (
+                f" Skipped {blocked} with restricted replies — follow the author or quote-tweet instead."
+                if blocked
+                else ""
+            )
+        ),
     }

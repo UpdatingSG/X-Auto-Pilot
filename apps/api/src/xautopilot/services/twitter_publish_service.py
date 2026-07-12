@@ -4,14 +4,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from xautopilot.config import settings
 from xautopilot.models.content import Draft, DraftVariant
 from xautopilot.models.published_post import PublishedPost
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
 from xautopilot.services.reply_target_service import (
     ReplyTargetNotFoundError,
     get_reply_target,
+    target_can_reply,
     target_is_publishable,
+    target_reply_block_reason,
 )
+from xautopilot.services.reply_eligibility_service import humanize_x_reply_error
 from xautopilot.services.metrics_sync_service import schedule_metrics_sync_jobs
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import (
@@ -119,8 +123,38 @@ async def _publish_with_client(
         raise XRateLimitError(exc.retry_after_seconds) from exc
     except XApiError as exc:
         if exc.status_code == 403:
-            raise XPublishForbiddenError(str(exc)) from exc
-        raise XPublishError(str(exc)) from exc
+            raise XPublishForbiddenError(humanize_x_reply_error(str(exc))) from exc
+        raise XPublishError(humanize_x_reply_error(str(exc))) from exc
+
+
+async def _ensure_reply_allowed(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    in_reply_to: str,
+    reply_target=None,
+) -> None:
+    if settings.x_api_mode == "mock":
+        return
+
+    if reply_target is not None and not target_can_reply(reply_target):
+        reason = target_reply_block_reason(reply_target)
+        raise DraftNotPublishableError(
+            reason
+            or "X will block this reply because of the author's reply settings. Try a quote-tweet instead."
+        )
+
+    account = await get_x_account(session, user_id)
+    client = get_x_client()
+    access_token = await get_valid_access_token(session, user_id)
+    tweet = await client.lookup_tweet(
+        access_token, in_reply_to, viewer_x_user_id=account.x_user_id
+    )
+    if not tweet.reply_allowed:
+        raise DraftNotPublishableError(
+            tweet.reply_block_reason
+            or "X will block this reply because of the author's reply settings. Try a quote-tweet instead."
+        )
 
 
 async def get_published_post_for_draft(
@@ -180,21 +214,26 @@ async def publish_draft(
         metadata = draft.generation_metadata or {}
         in_reply_to = metadata.get("x_tweet_id")
         reply_target_id = metadata.get("reply_target_id")
+        reply_target = None
         if reply_target_id:
             try:
-                target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
-                if target_is_publishable(target):
-                    in_reply_to = target.x_tweet_id
-                    metadata["x_tweet_id"] = target.x_tweet_id
+                reply_target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
+                if target_is_publishable(reply_target):
+                    in_reply_to = reply_target.x_tweet_id
+                    metadata["x_tweet_id"] = reply_target.x_tweet_id
                     draft.generation_metadata = metadata
                     await session.flush()
             except (ReplyTargetNotFoundError, ValueError):
-                pass
+                reply_target = None
         if not is_valid_x_tweet_id(str(in_reply_to or "")):
             raise DraftNotPublishableError(
                 "Reply target is missing a valid numeric X tweet ID. "
                 "Re-import the post via URL on the Engagement page, or add the tweet ID from the post URL."
             )
+
+        await _ensure_reply_allowed(
+            session, user_id, in_reply_to=str(in_reply_to), reply_target=reply_target
+        )
 
         async def _post_reply(access_token: str):
             return await client.post_reply(

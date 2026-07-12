@@ -35,6 +35,7 @@ from xautopilot.services.reply_target_service import (
     list_reply_targets,
     repair_reply_target_from_url,
     target_is_publishable,
+    to_reply_target_response,
     update_reply_target_tweet_id,
 )
 
@@ -47,7 +48,7 @@ async def get_reply_targets(
     db: AsyncSession = Depends(get_db),
 ):
     targets = await list_reply_targets(db, current_user.id)
-    return [ReplyTargetResponse.model_validate(t) for t in targets]
+    return [to_reply_target_response(t) for t in targets]
 
 
 @router.post("", response_model=ReplyTargetResponse, status_code=status.HTTP_201_CREATED)
@@ -67,7 +68,7 @@ async def add_reply_target(
         )
     except InvalidReplyTargetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    return ReplyTargetResponse.model_validate(target)
+    return to_reply_target_response(target)
 
 
 @router.post("/discover", response_model=DiscoverReplyTargetsResponse)
@@ -134,7 +135,7 @@ async def import_targets(
     created = await import_discovered_targets(db, current_user.id, discovered)
     return ImportReplyTargetsResponse(
         imported=len(created),
-        targets=[ReplyTargetResponse.model_validate(t) for t in created],
+        targets=[to_reply_target_response(t) for t in created],
     )
 
 
@@ -170,7 +171,7 @@ async def import_reply_target_from_url(
     )
     if not created:
         raise HTTPException(status_code=409, detail="This tweet is already in your reply targets")
-    return ReplyTargetResponse.model_validate(created[0])
+    return to_reply_target_response(created[0])
 
 
 @router.post("/{target_id}/fix-from-url", response_model=ReplyTargetResponse)
@@ -186,7 +187,7 @@ async def fix_reply_target_from_url(
         raise HTTPException(status_code=404, detail="Reply target not found") from None
     except InvalidReplyTargetError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    return ReplyTargetResponse.model_validate(target)
+    return to_reply_target_response(target)
 
 
 @router.patch("/{target_id}", response_model=ReplyTargetResponse)
@@ -204,7 +205,7 @@ async def patch_reply_target_tweet_id(
         raise HTTPException(status_code=404, detail="Reply target not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
-    return ReplyTargetResponse.model_validate(target)
+    return to_reply_target_response(target)
 
 
 @router.delete("/{target_id}", status_code=status.HTTP_204_NO_CONTENT)

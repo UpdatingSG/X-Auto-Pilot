@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { api, ApiError } from "@/lib/api-client";
-import { saveToken } from "@/lib/auth";
+import { saveToken, saveUserEmail, warmApiHealth } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,16 +13,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    warmApiHealth();
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setStatus("Signing in…");
     try {
-      const { access_token } = await api.login(email, password);
+      const { access_token, email: userEmail } = await api.login(email, password);
       saveToken(access_token);
-      router.push("/dashboard");
+      if (userEmail) saveUserEmail(userEmail);
+      setStatus("Opening dashboard…");
+      router.push("/dashboard/briefing");
     } catch (err) {
+      setStatus(null);
       setError(err instanceof ApiError ? err.message : "Login failed");
     } finally {
       setLoading(false);
@@ -58,6 +67,7 @@ export default function LoginPage() {
             />
           </div>
           {error && <p className="text-sm text-red-400">{error}</p>}
+          {status && !error && <p className="text-sm text-zinc-400">{status}</p>}
           <button
             type="submit"
             disabled={loading}

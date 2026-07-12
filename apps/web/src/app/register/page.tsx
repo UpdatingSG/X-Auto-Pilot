@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 import { api, ApiError } from "@/lib/api-client";
-import { saveToken } from "@/lib/auth";
+import { saveToken, saveUserEmail, warmApiHealth } from "@/lib/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -14,15 +14,20 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    warmApiHealth();
+  }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
       await api.register(email, password);
-      const { access_token } = await api.login(email, password);
+      const { access_token, email: userEmail } = await api.login(email, password);
       saveToken(access_token);
-      router.push("/dashboard");
+      if (userEmail) saveUserEmail(userEmail);
+      router.push("/dashboard/briefing");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Registration failed");
     } finally {

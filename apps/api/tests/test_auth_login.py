@@ -18,6 +18,7 @@ async def test_login_returns_access_token(client: AsyncClient):
     body = response.json()
     assert "access_token" in body
     assert body["token_type"] == "bearer"
+    assert body["email"] == "creator@example.com"
 
 
 async def test_login_rejects_wrong_password(client: AsyncClient):

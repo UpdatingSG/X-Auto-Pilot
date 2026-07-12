@@ -14,7 +14,9 @@ from xautopilot.services.reply_target_service import (
     InvalidReplyTargetError,
     ReplyTargetNotFoundError,
     get_reply_target,
+    target_can_reply,
     target_is_publishable,
+    target_reply_block_reason,
 )
 from xautopilot.services.voice_profile_service import get_active_voice_profile
 
@@ -220,6 +222,13 @@ async def generate_reply_draft_from_target(
         raise InvalidReplyTargetError(
             "This reply target has an invalid tweet ID. "
             "On Engagement, paste the post URL and click Fix ID."
+        )
+
+    if not target_can_reply(target):
+        reason = target_reply_block_reason(target)
+        raise InvalidReplyTargetError(
+            reason
+            or "X will block replies to this post. Follow the author, get mentioned, or use a quote-tweet."
         )
 
     voice = await get_active_voice_profile(session, user_id)

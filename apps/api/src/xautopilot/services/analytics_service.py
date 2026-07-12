@@ -240,13 +240,6 @@ async def get_insights(session: AsyncSession, user_id: UUID) -> InsightsResponse
     if worst and worst.category and worst.category != best_category:
         adjustments["decrease_weight"].append(worst.category)
 
-    from xautopilot.services.learning_service import apply_learned_weights
-
-    try:
-        await apply_learned_weights(session, user_id)
-    except Exception:
-        pass
-
     return InsightsResponse(
         period="7d",
         what_worked=what_worked,

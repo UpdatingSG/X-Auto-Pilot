@@ -4,14 +4,40 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.models.voice_profile import VoiceProfile
-from xautopilot.services.analytics_service import get_insights, list_post_analytics
+from xautopilot.services.analytics_service import list_post_analytics, period_start
 
 
 LEARNING_RATE = 0.3
+
+
+class _InsightAdjustments:
+    def __init__(self, recommended_adjustments: dict[str, list[str]]):
+        self.recommended_adjustments = recommended_adjustments
+
+
+def _category_adjustments_from_posts(posts) -> dict[str, list[str]]:
+    with_metrics = [p for p in posts if p.metrics is not None]
+    if not with_metrics:
+        return {"increase_weight": [], "decrease_weight": []}
+
+    ranked = sorted(
+        with_metrics,
+        key=lambda p: p.metrics.engagement_rate if p.metrics else 0,
+        reverse=True,
+    )
+    best = ranked[0]
+    worst = ranked[-1] if len(ranked) > 1 else None
+    increase: list[str] = []
+    decrease: list[str] = []
+    if best.category:
+        increase.append(best.category)
+    if worst and worst.category and worst.category != best.category:
+        decrease.append(worst.category)
+    return {"increase_weight": increase, "decrease_weight": decrease}
 
 
 def _merge_weights(current: dict, adjustments: dict[str, dict[str, float]]) -> dict:
@@ -78,8 +104,10 @@ async def apply_learned_weights(session: AsyncSession, user_id: UUID) -> dict:
     if profile is None:
         return {"applied": False, "reason": "no_active_profile"}
 
-    insights = await get_insights(session, user_id)
     posts = await list_post_analytics(session, user_id, "30d")
+    since_7d = period_start(7)
+    posts_7d = [p for p in posts if p.published_at >= since_7d]
+    insights = _InsightAdjustments(_category_adjustments_from_posts(posts_7d))
     adjustments = _weights_from_insights(insights, posts)
     if not adjustments:
         return {"applied": False, "reason": "insufficient_data"}

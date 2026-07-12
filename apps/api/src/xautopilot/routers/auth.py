@@ -9,6 +9,7 @@ from xautopilot.services.auth_service import (
     EmailAlreadyRegisteredError,
     authenticate_user,
     register_user,
+    upgrade_password_hash,
 )
 from xautopilot.services.token_service import create_access_token
 
@@ -35,7 +36,8 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
-    return TokenResponse(access_token=create_access_token(user.id))
+    await upgrade_password_hash(db, user, data.password)
+    return TokenResponse(access_token=create_access_token(user.id), email=user.email)
 
 
 @router.get("/me", response_model=UserResponse)

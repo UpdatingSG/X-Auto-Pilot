@@ -4,14 +4,16 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { api, ApiError, GrowthDashboard } from "@/lib/api-client";
-import { getToken } from "@/lib/auth";
+import { getToken, warmApiHealth } from "@/lib/auth";
 
 export default function GrowthPage() {
   const [data, setData] = useState<GrowthDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [learning, setLearning] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    warmApiHealth();
     const token = getToken();
     if (!token) return;
     api.getGrowthDashboard(token).then(setData).catch((err) => {
@@ -28,11 +30,27 @@ export default function GrowthPage() {
     const token = getToken();
     if (!token) return;
     setLearning(true);
+    setError(null);
+    setMessage(null);
     try {
-      await api.runLearningCycle(token);
+      const result = await api.runLearningCycle(token);
+      if (result.applied) {
+        setMessage("Learning cycle complete — future plans and briefings will use updated weights.");
+      } else if (result.reason === "no_active_profile") {
+        setError("Set up your Voice Profile first (Settings → Voice Profile).");
+      } else if (result.reason === "insufficient_data") {
+        setMessage("Not enough published posts yet. Publish a few more posts, then try again.");
+      } else {
+        setMessage("Learning cycle finished with no changes.");
+      }
       setData(await api.getGrowthDashboard(token));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Learning failed");
+      const msg = err instanceof ApiError ? err.message : "Learning failed";
+      setError(
+        msg.includes("ROUTER_EXTERNAL_TARGET") || msg.includes("502") || msg.includes("504")
+          ? "API timed out — wait a moment for the server to wake up, then try again."
+          : msg,
+      );
     } finally {
       setLearning(false);
     }
@@ -60,6 +78,9 @@ export default function GrowthPage() {
           {learning ? "Learning…" : "Run learning cycle"}
         </button>
       </div>
+
+      {message && <p className="mb-4 text-sm text-green-400">{message}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       <div className="mb-8 grid gap-4 sm:grid-cols-4">
         <Metric label="Reply streak" value={`${data.streak.reply_days} days`} />

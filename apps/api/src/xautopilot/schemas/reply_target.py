@@ -24,6 +24,8 @@ class ReplyTargetResponse(BaseModel):
     relevance_score: float | None
     discovered_at: datetime
     expires_at: datetime | None
+    reply_allowed: bool = True
+    reply_block_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -36,6 +38,8 @@ class DiscoveredReplyTarget(BaseModel):
     author_followers: int
     likes: int
     relevance_score: float = 0.0
+    reply_allowed: bool = True
+    reply_block_reason: str | None = None
 
 
 class DiscoverReplyTargetsRequest(BaseModel):

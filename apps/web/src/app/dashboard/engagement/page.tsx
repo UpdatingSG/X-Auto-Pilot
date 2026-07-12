@@ -138,9 +138,13 @@ export default function EngagementPage() {
     setMessage(null);
     setImporting(true);
     try {
-      await api.importReplyTargetFromUrl(token, tweetUrl.trim());
+      const target = await api.importReplyTargetFromUrl(token, tweetUrl.trim());
       setTweetUrl("");
-      setMessage("Reply target added from URL.");
+      setMessage(
+        target.reply_allowed === false
+          ? `Imported, but X will block replies: ${target.reply_block_reason ?? "author restricts replies"}. Follow them or use a quote-tweet.`
+          : "Reply target added from URL.",
+      );
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not import URL");
@@ -333,6 +337,12 @@ export default function EngagementPage() {
                     {!isValidTweetId(target.x_tweet_id) && " — invalid, fix with URL below"}
                   </p>
                 )}
+                {target.reply_allowed === false && (
+                  <p className="mt-2 text-sm text-amber-300">
+                    Replies blocked: {target.reply_block_reason ?? "Author restricts who can reply."}
+                    {" "}Follow them on X first, or use Quote opportunities instead.
+                  </p>
+                )}
               </div>
             </div>
             {!isValidTweetId(target.x_tweet_id) && (
@@ -358,10 +368,10 @@ export default function EngagementPage() {
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => handleDraftReply(target.id)}
-                disabled={!isValidTweetId(target.x_tweet_id)}
+                disabled={!isValidTweetId(target.x_tweet_id) || target.reply_allowed === false}
                 className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm hover:bg-sky-500 disabled:opacity-50"
               >
-                Draft reply now
+                {target.reply_allowed === false ? "Reply blocked by X" : "Draft reply now"}
               </button>
               <button
                 onClick={() => handleDelete(target.id)}
