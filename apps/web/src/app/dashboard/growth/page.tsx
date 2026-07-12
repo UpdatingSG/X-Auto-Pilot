@@ -15,7 +15,12 @@ export default function GrowthPage() {
     const token = getToken();
     if (!token) return;
     api.getGrowthDashboard(token).then(setData).catch((err) => {
-      setError(err instanceof ApiError ? err.message : "Failed to load");
+      const msg = err instanceof ApiError ? err.message : "Failed to load";
+      setError(
+        msg.includes("migrations") || msg.includes("schema") || msg.includes("Redeploy")
+          ? `${msg} After redeploying the API on Render, refresh this page.`
+          : msg,
+      );
     });
   }, []);
 

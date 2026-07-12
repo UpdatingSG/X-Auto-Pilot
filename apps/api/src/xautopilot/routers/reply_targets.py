@@ -33,6 +33,8 @@ from xautopilot.services.reply_target_service import (
     create_reply_target,
     delete_reply_target,
     list_reply_targets,
+    repair_reply_target_from_url,
+    target_is_publishable,
     update_reply_target_tweet_id,
 )
 
@@ -169,6 +171,22 @@ async def import_reply_target_from_url(
     if not created:
         raise HTTPException(status_code=409, detail="This tweet is already in your reply targets")
     return ReplyTargetResponse.model_validate(created[0])
+
+
+@router.post("/{target_id}/fix-from-url", response_model=ReplyTargetResponse)
+async def fix_reply_target_from_url(
+    target_id: UUID,
+    data: ReplyTargetFromUrlRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        target = await repair_reply_target_from_url(db, current_user.id, target_id, data.url)
+    except ReplyTargetNotFoundError:
+        raise HTTPException(status_code=404, detail="Reply target not found") from None
+    except InvalidReplyTargetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return ReplyTargetResponse.model_validate(target)
 
 
 @router.patch("/{target_id}", response_model=ReplyTargetResponse)

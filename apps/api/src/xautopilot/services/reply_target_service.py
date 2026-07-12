@@ -99,3 +99,36 @@ async def delete_reply_target(session: AsyncSession, user_id: UUID, target_id: U
     target = await get_reply_target(session, user_id, target_id)
     await session.delete(target)
     await session.commit()
+
+
+async def repair_reply_target_from_url(
+    session: AsyncSession,
+    user_id: UUID,
+    target_id: UUID,
+    url: str,
+) -> ReplyTarget:
+    """Re-fetch tweet ID and text from an X post URL — fixes stale manual targets."""
+    from xautopilot.services.reply_discovery_service import (
+        ReplyDiscoveryError,
+        lookup_reply_target_from_url,
+    )
+
+    target = await get_reply_target(session, user_id, target_id)
+    try:
+        tweet = await lookup_reply_target_from_url(session, user_id, url)
+    except ReplyDiscoveryError as exc:
+        raise InvalidReplyTargetError(str(exc)) from exc
+
+    target.x_tweet_id = normalize_x_tweet_id(tweet.x_tweet_id)
+    target.x_user_id = tweet.x_user_id
+    target.author_handle = tweet.author_handle.lstrip("@")
+    if tweet.tweet_text.strip():
+        target.tweet_text = tweet.tweet_text
+    target.expires_at = datetime.now(UTC) + timedelta(hours=48)
+    await session.commit()
+    await session.refresh(target)
+    return target
+
+
+def target_is_publishable(target: ReplyTarget) -> bool:
+    return is_valid_x_tweet_id(target.x_tweet_id)

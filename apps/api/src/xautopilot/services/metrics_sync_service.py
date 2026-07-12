@@ -31,12 +31,13 @@ async def schedule_metrics_sync_jobs(session: AsyncSession, post: PublishedPost)
 
 
 async def list_due_metrics_sync_jobs(
-    session: AsyncSession, *, now: datetime | None = None
+    session: AsyncSession, *, now: datetime | None = None, limit: int = 15
 ) -> list[MetricsSyncJob]:
     now = now or datetime.now(UTC)
     result = await session.execute(
         select(MetricsSyncJob)
         .where(MetricsSyncJob.status == "pending", MetricsSyncJob.sync_at <= now)
         .order_by(MetricsSyncJob.sync_at.asc())
+        .limit(limit)
     )
     return list(result.scalars().all())

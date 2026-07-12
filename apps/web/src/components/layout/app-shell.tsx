@@ -8,19 +8,18 @@ import { api } from "@/lib/api-client";
 import { clearToken, getToken } from "@/lib/auth";
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/briefing", label: "Daily Briefing" },
-  { href: "/dashboard/growth", label: "Growth" },
-  { href: "/settings/profile", label: "Voice Profile" },
-  { href: "/settings/sources", label: "Sources" },
-  { href: "/settings/schedule", label: "Schedule" },
-  { href: "/settings/x", label: "X Account" },
-  { href: "/dashboard/plan", label: "Content Plan" },
-  { href: "/dashboard/engagement", label: "Engagement" },
+  { href: "/dashboard/briefing", label: "★ Daily Briefing" },
   { href: "/dashboard/drafts", label: "Drafts" },
   { href: "/dashboard/schedule", label: "Publish Queue" },
+  { href: "/dashboard/growth", label: "Growth Stats" },
+  { href: "/dashboard/plan", label: "Content Plan" },
+  { href: "/dashboard/engagement", label: "Engagement" },
   { href: "/dashboard/history", label: "Published" },
   { href: "/dashboard/analytics", label: "Analytics" },
+  { href: "/settings/profile", label: "Voice Profile" },
+  { href: "/settings/schedule", label: "Schedule" },
+  { href: "/settings/x", label: "X Account" },
+  { href: "/settings/sources", label: "Sources" },
 ];
 
 export function AppShell({ children, title }: { children: React.ReactNode; title: string }) {

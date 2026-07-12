@@ -13,7 +13,8 @@ from xautopilot.config import settings
 from xautopilot.models.reply_target import ReplyTarget
 from xautopilot.services.reply_target_service import create_reply_target
 from xautopilot.services.voice_profile_service import get_active_voice_profile
-from xautopilot.services.x_client import DiscoveredTweet, get_x_client
+from xautopilot.services.x_client import DiscoveredTweet, XApiError, get_x_client
+from xautopilot.services.x_account_service import XAccountNotFoundError
 from xautopilot.services.x_token_service import XAccountNeedsReauthError, get_valid_access_token
 
 
@@ -129,6 +130,12 @@ async def discover_reply_targets(
 
     try:
         access_token = await get_valid_access_token(session, user_id)
+    except XAccountNotFoundError:
+        return DiscoverResult(
+            targets=[],
+            source="none",
+            message="Connect your X account in Settings to discover reply opportunities.",
+        )
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account in Settings before discovering targets.") from exc
 
@@ -216,6 +223,12 @@ async def discover_from_watchlist(
 
     try:
         access_token = await get_valid_access_token(session, user_id)
+    except XAccountNotFoundError:
+        return DiscoverResult(
+            targets=[],
+            source="watchlist",
+            message="Connect your X account in Settings to monitor your watchlist.",
+        )
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account before checking watchlist.") from exc
 
@@ -334,10 +347,15 @@ async def lookup_reply_target_from_url(
 
     try:
         access_token = await get_valid_access_token(session, user_id)
+    except XAccountNotFoundError:
+        raise ReplyDiscoveryError("Connect your X account in Settings before importing from URL.")
     except XAccountNeedsReauthError as exc:
         raise ReplyDiscoveryError("Reconnect your X account in Settings before importing from URL.") from exc
 
-    tweet = await client.lookup_tweet(access_token, tweet_id)
+    try:
+        tweet = await client.lookup_tweet(access_token, tweet_id)
+    except XApiError as exc:
+        raise ReplyDiscoveryError(str(exc)) from exc
     if tweet.author_handle.lower() != handle.lower():
         tweet.author_handle = handle
     return tweet

@@ -533,6 +533,20 @@ export const api = {
   getDailyBriefing: (token: string) =>
     request<BriefingResponse>("/v1/growth/briefing", {}, token),
 
+  runQuickReplies: (token: string) =>
+    request<{ imported: number; drafted: number; message: string }>(
+      "/v1/growth/quick-replies",
+      { method: "POST", body: "{}" },
+      token,
+    ),
+
+  fixReplyTargetFromUrl: (token: string, targetId: string, url: string) =>
+    request<ReplyTarget>(
+      `/v1/reply-targets/${targetId}/fix-from-url`,
+      { method: "POST", body: JSON.stringify({ url }) },
+      token,
+    ),
+
   getGrowthDashboard: (token: string) =>
     request<GrowthDashboard>("/v1/growth/dashboard", {}, token),
 

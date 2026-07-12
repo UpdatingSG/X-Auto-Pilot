@@ -17,6 +17,8 @@ export default function EngagementPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
+  const [fixUrl, setFixUrl] = useState("");
+  const [fixingId, setFixingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
   async function load() {
@@ -60,6 +62,27 @@ export default function EngagementPage() {
     } finally {
       setDiscovering(false);
     }
+  }
+
+  async function handleFixTarget(targetId: string) {
+    const token = getToken();
+    if (!token || !fixUrl.trim()) return;
+    setFixingId(targetId);
+    setError(null);
+    try {
+      await api.fixReplyTargetFromUrl(token, targetId, fixUrl.trim());
+      setMessage("Tweet ID fixed — you can draft and publish this reply now.");
+      setFixUrl("");
+      setFixingId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Fix failed");
+      setFixingId(null);
+    }
+  }
+
+  function isValidTweetId(id: string) {
+    return /^\d{1,19}$/.test(id);
   }
 
   async function handleDiscover() {
@@ -182,8 +205,8 @@ export default function EngagementPage() {
   return (
     <AppShell title="Engagement">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Auto-discover tweets from larger accounts in your niche, or paste an X post URL.
-        Imported targets feed into your content plan and reply drafts.
+        Paste an X post URL to reply to it. Use <strong className="text-zinc-200">Daily Briefing</strong> for
+        the one-click workflow — this page is for manual fixes and discovery.
       </p>
 
       <div className="mb-8 flex flex-wrap gap-3">
@@ -305,17 +328,38 @@ export default function EngagementPage() {
                 <p className="text-sm text-sky-400">@{target.author_handle}</p>
                 <p className="mt-2 text-white">{target.tweet_text}</p>
                 {target.x_tweet_id && (
-                  <p className={`mt-1 text-xs ${/^\d{1,19}$/.test(target.x_tweet_id) ? "text-zinc-500" : "text-amber-400"}`}>
+                  <p className={`mt-1 text-xs ${isValidTweetId(target.x_tweet_id) ? "text-zinc-500" : "text-amber-400"}`}>
                     Tweet ID: {target.x_tweet_id}
-                    {!/^\d{1,19}$/.test(target.x_tweet_id) && " — invalid, re-import via URL"}
+                    {!isValidTweetId(target.x_tweet_id) && " — invalid, fix with URL below"}
                   </p>
                 )}
               </div>
             </div>
+            {!isValidTweetId(target.x_tweet_id) && (
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={fixingId === target.id ? fixUrl : ""}
+                  onChange={(e) => {
+                    setFixingId(target.id);
+                    setFixUrl(e.target.value);
+                  }}
+                  placeholder="Paste X post URL to fix ID"
+                  className="flex-1 rounded-lg border border-amber-700/50 bg-zinc-950 px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={() => handleFixTarget(target.id)}
+                  disabled={fixingId === target.id && !fixUrl.trim()}
+                  className="rounded-lg bg-amber-600 px-3 py-2 text-sm hover:bg-amber-500 disabled:opacity-50"
+                >
+                  Fix ID
+                </button>
+              </div>
+            )}
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => handleDraftReply(target.id)}
-                className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm hover:bg-sky-500"
+                disabled={!isValidTweetId(target.x_tweet_id)}
+                className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm hover:bg-sky-500 disabled:opacity-50"
               >
                 Draft reply now
               </button>

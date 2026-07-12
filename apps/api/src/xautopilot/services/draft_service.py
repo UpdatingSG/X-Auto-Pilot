@@ -10,7 +10,12 @@ from xautopilot.services.agents.reply_agent import generate_reply_variations
 from xautopilot.services.agents.thread_writer import generate_thread_variations
 from xautopilot.services.agents.tweet_writer import generate_tweet_variations
 from xautopilot.services.content_plan_service import IdeaNotFoundError
-from xautopilot.services.reply_target_service import ReplyTargetNotFoundError, get_reply_target
+from xautopilot.services.reply_target_service import (
+    InvalidReplyTargetError,
+    ReplyTargetNotFoundError,
+    get_reply_target,
+    target_is_publishable,
+)
 from xautopilot.services.voice_profile_service import get_active_voice_profile
 
 
@@ -210,6 +215,12 @@ async def generate_reply_draft_from_target(
         target = await get_reply_target(session, user_id, target_id)
     except ReplyTargetNotFoundError as exc:
         raise IdeaNotFoundError from exc
+
+    if not target_is_publishable(target):
+        raise InvalidReplyTargetError(
+            "This reply target has an invalid tweet ID. "
+            "On Engagement, paste the post URL and click Fix ID."
+        )
 
     voice = await get_active_voice_profile(session, user_id)
     avoid = voice.vocabulary.get("avoid", []) if voice else []

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { api, ApiError, BriefingResponse, DiscoveredReplyTarget } from "@/lib/api-client";
+import { api, ApiError, BriefingResponse } from "@/lib/api-client";
 import { getToken } from "@/lib/auth";
 
 export default function BriefingPage() {
@@ -20,7 +20,8 @@ export default function BriefingPage() {
       setBriefing(await api.getDailyBriefing(token));
       setError(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to load briefing");
+      const msg = err instanceof ApiError ? err.message : "Failed to load briefing";
+      setError(msg.includes("migrations") || msg.includes("schema") ? `${msg} — redeploy the API on Render to apply updates.` : msg);
     }
   }
 
@@ -28,32 +29,40 @@ export default function BriefingPage() {
     load();
   }, []);
 
-  async function importAndDraft(targets: DiscoveredReplyTarget[]) {
+  async function handleQuickReplies() {
     const token = getToken();
-    if (!token || targets.length === 0) return;
+    if (!token) return;
     setBusy(true);
     setMessage(null);
+    setError(null);
     try {
-      const imported = await api.importReplyTargets(token, targets.slice(0, 5));
-      for (const target of imported.targets.slice(0, 3)) {
-        await api.generateReplyDraft(token, target.id);
-      }
-      setMessage(`Imported ${imported.imported} targets and drafted replies for top picks.`);
+      const result = await api.runQuickReplies(token);
+      setMessage(result.message);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Import failed");
+      setError(err instanceof ApiError ? err.message : "Quick replies failed");
     } finally {
       setBusy(false);
     }
   }
 
-  if (!briefing) {
+  if (!briefing && !error) {
     return (
       <AppShell title="Daily Briefing">
-        {error ? <p className="text-red-400">{error}</p> : <p className="text-zinc-400">Loading...</p>}
+        <p className="text-zinc-400">Loading...</p>
       </AppShell>
     );
   }
+
+  if (!briefing && error) {
+    return (
+      <AppShell title="Daily Briefing">
+        <p className="text-red-400">{error}</p>
+      </AppShell>
+    );
+  }
+
+  if (!briefing) return null;
 
   const { targets } = briefing;
   const replyPct = targets.replies_goal
@@ -62,12 +71,21 @@ export default function BriefingPage() {
 
   return (
     <AppShell title="Daily Briefing">
-      <p className="mb-6 max-w-3xl text-zinc-400">
-        Your growth workflow for today — fresh reply opportunities, saved targets, and what to do next.
-        {briefing.growth_mode && (
-          <span className="ml-2 rounded bg-sky-500/20 px-2 py-0.5 text-xs text-sky-300">Growth mode</span>
-        )}
-      </p>
+      <div className="mb-8 rounded-xl border border-sky-800/40 bg-sky-950/20 p-6">
+        <h3 className="text-lg font-medium text-white">Your 3-step growth workflow</h3>
+        <ol className="mt-3 list-inside list-decimal space-y-1 text-sm text-zinc-300">
+          <li>Click <strong>Find & draft replies</strong> below (discovers posts + writes reply drafts)</li>
+          <li>Go to <Link href="/dashboard/drafts" className="text-sky-400 hover:underline">Drafts</Link> → approve the ones you like</li>
+          <li>They auto-schedule (or publish from <Link href="/dashboard/schedule" className="text-sky-400 hover:underline">Publish Queue</Link>)</li>
+        </ol>
+        <button
+          disabled={busy}
+          onClick={handleQuickReplies}
+          className="mt-4 rounded-lg bg-sky-500 px-6 py-2.5 font-medium hover:bg-sky-400 disabled:opacity-50"
+        >
+          {busy ? "Working…" : "Find & draft replies"}
+        </button>
+      </div>
 
       {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
       {message && <p className="mb-4 text-sm text-green-400">{message}</p>}
@@ -92,7 +110,7 @@ export default function BriefingPage() {
 
       {briefing.actions.length > 0 && (
         <section className="mb-8">
-          <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Actions</h3>
+          <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Next up</h3>
           <ul className="space-y-2">
             {briefing.actions.map((a, i) => (
               <li
@@ -111,65 +129,28 @@ export default function BriefingPage() {
       )}
 
       <section className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
-            Fresh opportunities ({briefing.fresh_opportunities.length})
-          </h3>
-          <button
-            disabled={busy || briefing.fresh_opportunities.length === 0}
-            onClick={() =>
-              importAndDraft(
-                briefing.fresh_opportunities.map((t) => ({
-                  x_tweet_id: t.x_tweet_id,
-                  x_user_id: "0",
-                  author_handle: t.author_handle,
-                  tweet_text: t.tweet_text,
-                  author_followers: t.author_followers,
-                  likes: t.likes,
-                  relevance_score: t.relevance_score,
-                })),
-              )
-            }
-            className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium hover:bg-sky-400 disabled:opacity-50"
-          >
-            Import top 5 & draft replies
-          </button>
-        </div>
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">
+          Fresh opportunities ({briefing.fresh_opportunities.length})
+        </h3>
         {briefing.discovery_message && (
           <p className="mb-3 text-xs text-zinc-500">{briefing.discovery_message}</p>
         )}
         <div className="space-y-3">
-          {briefing.fresh_opportunities.map((t) => (
+          {briefing.fresh_opportunities.slice(0, 5).map((t) => (
             <TargetCard key={t.x_tweet_id} target={t} />
           ))}
           {briefing.fresh_opportunities.length === 0 && (
-            <p className="text-sm text-zinc-500">No fresh posts right now — check Engagement or add watchlist creators.</p>
+            <p className="text-sm text-zinc-500">No fresh posts — add creators to your watchlist in Voice Profile.</p>
           )}
         </div>
-      </section>
-
-      <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Saved targets</h3>
-        <div className="space-y-3">
-          {briefing.saved_targets.map((t) => (
-            <TargetCard key={t.reply_target_id ?? t.x_tweet_id} target={t} />
-          ))}
-        </div>
         <Link href="/dashboard/engagement" className="mt-3 inline-block text-sm text-sky-400 hover:underline">
-          Manage all targets →
+          More discovery options →
         </Link>
       </section>
 
-      {briefing.hints.length > 0 && (
-        <section>
-          <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Growth hints</h3>
-          <ul className="list-inside list-disc space-y-1 text-sm text-zinc-400">
-            {briefing.hints.map((h, i) => (
-              <li key={i}>{h}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <Link href="/dashboard/growth" className="text-sm text-zinc-500 hover:text-zinc-300">
+        View detailed growth stats →
+      </Link>
     </AppShell>
   );
 }
@@ -194,7 +175,6 @@ function TargetCard({
     likes: number;
     relevance_score: number;
     source: string;
-    has_draft?: boolean;
   };
 }) {
   return (
@@ -205,9 +185,7 @@ function TargetCard({
       </div>
       <p className="mt-2 text-sm text-zinc-300">{target.tweet_text}</p>
       <p className="mt-2 text-xs text-zinc-500">
-        {target.author_followers.toLocaleString()} followers · {target.likes} likes · score{" "}
-        {target.relevance_score.toFixed(2)}
-        {target.has_draft && <span className="ml-2 text-green-400">· draft ready</span>}
+        {target.author_followers.toLocaleString()} followers · {target.likes} likes
       </p>
     </div>
   );

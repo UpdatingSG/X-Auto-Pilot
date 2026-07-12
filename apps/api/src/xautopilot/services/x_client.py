@@ -338,10 +338,20 @@ class LiveXClient:
         )
 
     def _parse_discovered_tweets(self, payload: dict) -> list[DiscoveredTweet]:
-        tweets = payload.get("data") or []
+        raw_data = payload.get("data")
+        if not raw_data:
+            tweets: list[dict] = []
+        elif isinstance(raw_data, dict):
+            tweets = [raw_data]
+        elif isinstance(raw_data, list):
+            tweets = [tweet for tweet in raw_data if isinstance(tweet, dict)]
+        else:
+            tweets = []
+
         users = {
             user["id"]: user
             for user in (payload.get("includes") or {}).get("users") or []
+            if isinstance(user, dict) and user.get("id")
         }
         discovered: list[DiscoveredTweet] = []
         for tweet in tweets:

@@ -19,7 +19,11 @@ from xautopilot.schemas.briefing import (
 )
 from xautopilot.services.analytics_service import build_reach_hints
 from xautopilot.services.learning_service import build_weight_hints
-from xautopilot.services.reply_discovery_service import discover_from_watchlist, discover_reply_targets
+from xautopilot.services.reply_discovery_service import (
+    DiscoverResult,
+    discover_from_watchlist,
+    discover_reply_targets,
+)
 from xautopilot.services.reply_target_service import list_active_reply_targets
 from xautopilot.services.schedule_service import get_schedule
 from xautopilot.services.voice_profile_service import get_active_voice_profile
@@ -71,8 +75,18 @@ async def get_daily_briefing(session: AsyncSession, user_id: UUID) -> BriefingRe
     voice = await get_active_voice_profile(session, user_id)
     active_targets = await list_active_reply_targets(session, user_id)
 
-    discovery = await discover_reply_targets(session, user_id, limit=8)
-    watchlist = await discover_from_watchlist(session, user_id, limit=5)
+    discovery_message: str | None = None
+    try:
+        discovery = await discover_reply_targets(session, user_id, limit=8)
+        discovery_message = discovery.message
+    except Exception as exc:
+        discovery = DiscoverResult(targets=[], source="none", message=str(exc))
+        discovery_message = discovery.message
+
+    try:
+        watchlist = await discover_from_watchlist(session, user_id, limit=5)
+    except Exception:
+        watchlist = DiscoverResult(targets=[], source="none")
 
     existing_ids = {t.x_tweet_id for t in active_targets}
     fresh: list[BriefingTarget] = []
@@ -175,5 +189,38 @@ async def get_daily_briefing(session: AsyncSession, user_id: UUID) -> BriefingRe
         saved_targets=queued,
         actions=actions,
         hints=hints[:6],
-        discovery_message=discovery.message,
+        discovery_message=discovery_message or discovery.message,
     )
+
+
+async def run_quick_reply_workflow(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    limit: int = 3,
+) -> dict:
+    """Discover → import → draft replies in one step."""
+    from xautopilot.services.draft_service import generate_reply_draft_from_target
+    from xautopilot.services.reply_discovery_service import (
+        discover_reply_targets,
+        import_discovered_targets,
+    )
+    from xautopilot.services.reply_target_service import target_is_publishable
+
+    discovery = await discover_reply_targets(session, user_id, limit=8)
+    if not discovery.targets:
+        return {"imported": 0, "drafted": 0, "message": "No fresh reply opportunities found right now."}
+
+    imported = await import_discovered_targets(session, user_id, discovery.targets[:5])
+    publishable = [t for t in imported if target_is_publishable(t)]
+    drafted = 0
+    for target in publishable[:limit]:
+        await generate_reply_draft_from_target(session, user_id, target.id)
+        drafted += 1
+
+    return {
+        "imported": len(imported),
+        "drafted": drafted,
+        "skipped_invalid": len(imported) - len(publishable),
+        "message": f"Imported {len(imported)} targets and created {drafted} reply drafts.",
+    }

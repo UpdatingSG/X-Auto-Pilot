@@ -14,6 +14,7 @@ from xautopilot.schemas.content import (
 )
 from xautopilot.schemas.schedule import ScheduleDraftRequest
 from xautopilot.services.content_plan_service import IdeaNotFoundError
+from xautopilot.services.reply_target_service import InvalidReplyTargetError
 from xautopilot.services.draft_service import (
     DraftNotFoundError,
     IdeaNotApprovedError,
@@ -91,6 +92,8 @@ async def generate_draft(
             draft = await generate_draft_from_idea(db, current_user.id, data.idea_id)  # type: ignore[arg-type]
     except IdeaNotFoundError:
         raise HTTPException(status_code=404, detail="Idea or reply target not found") from None
+    except InvalidReplyTargetError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     except IdeaNotApprovedError:
         raise HTTPException(status_code=400, detail="Idea must be approved first") from None
     except LLMNotConfiguredError as exc:

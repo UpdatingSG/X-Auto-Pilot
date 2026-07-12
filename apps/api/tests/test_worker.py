@@ -28,9 +28,8 @@ async def test_worker_tick_auto_publishes_overdue_draft(client: AsyncClient):
 
     assert response.status_code == 200
     body = response.json()
-    assert len(body["published"]) == 1
-    assert body["published"][0]["success"] is True
-    assert body["published"][0]["x_tweet_id"]
+    assert body["published_ok"] == 1
+    assert body["published_failed"] == 0
 
     history = await client.get("/v1/publish/history", headers=headers)
     assert history.status_code == 200
@@ -44,7 +43,7 @@ async def test_worker_tick_skips_future_draft(client: AsyncClient):
     response = await client.post("/v1/worker/tick")
 
     assert response.status_code == 200
-    assert response.json()["published"] == []
+    assert response.json()["published_ok"] == 0
 
 
 async def test_metrics_sync_tick_runs_due_jobs(client: AsyncClient, monkeypatch):
@@ -70,9 +69,9 @@ async def test_metrics_sync_tick_runs_due_jobs(client: AsyncClient, monkeypatch)
 
     response = await client.post("/v1/worker/tick")
     assert response.status_code == 200
-    synced = response.json()["metrics_synced"]
-    assert len(synced) == 3
-    assert all(s["success"] for s in synced)
+    body = response.json()
+    assert body["metrics_ok"] == 3
+    assert body["metrics_failed"] == 0
 
 
 async def test_worker_status_endpoint(client: AsyncClient):

@@ -22,6 +22,29 @@ from xautopilot.services.x_token_service import XAccountNeedsReauthError
 
 log = logging.getLogger("xautopilot.worker")
 
+MAX_DRAFTS_PER_TICK = 10
+MAX_METRICS_JOBS_PER_TICK = 15
+MAX_ERRORS_IN_RESPONSE = 5
+
+
+@dataclass
+class WorkerTickSummary:
+    published_ok: int = 0
+    published_failed: int = 0
+    metrics_ok: int = 0
+    metrics_failed: int = 0
+    errors: list[str] | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "ok": self.published_failed == 0 and self.metrics_failed == 0,
+            "published_ok": self.published_ok,
+            "published_failed": self.published_failed,
+            "metrics_ok": self.metrics_ok,
+            "metrics_failed": self.metrics_failed,
+            "errors": self.errors or [],
+        }
+
 
 @dataclass
 class PublishTickResult:
@@ -42,7 +65,7 @@ class MetricsSyncTickResult:
 
 
 async def list_due_scheduled_drafts(
-    session: AsyncSession, *, now: datetime | None = None
+    session: AsyncSession, *, now: datetime | None = None, limit: int = MAX_DRAFTS_PER_TICK
 ) -> list[Draft]:
     now = now or datetime.now(UTC)
     result = await session.execute(
@@ -50,6 +73,7 @@ async def list_due_scheduled_drafts(
         .options(selectinload(Draft.variants))
         .where(Draft.status == "scheduled", Draft.scheduled_at <= now)
         .order_by(Draft.scheduled_at.asc())
+        .limit(limit)
     )
     return list(result.scalars().all())
 
@@ -134,27 +158,24 @@ async def run_metrics_sync_tick(
 
 
 async def run_worker_tick(session: AsyncSession, *, now: datetime | None = None) -> dict:
+    summary = WorkerTickSummary(errors=[])
     published = await run_publish_tick(session, now=now)
+    for r in published:
+        if r.success:
+            summary.published_ok += 1
+        else:
+            summary.published_failed += 1
+            if r.error and len(summary.errors) < MAX_ERRORS_IN_RESPONSE:
+                summary.errors.append(f"draft {r.draft_id}: {r.error[:200]}")
+
     metrics = await run_metrics_sync_tick(session, now=now)
+    for r in metrics:
+        if r.success:
+            summary.metrics_ok += 1
+        else:
+            summary.metrics_failed += 1
+            if r.error and len(summary.errors) < MAX_ERRORS_IN_RESPONSE:
+                summary.errors.append(f"metrics {r.label}: {r.error[:120]}")
+
     await session.commit()
-    return {
-        "published": [
-            {
-                "draft_id": str(r.draft_id),
-                "success": r.success,
-                "x_tweet_id": r.x_tweet_id,
-                "error": r.error,
-            }
-            for r in published
-        ],
-        "metrics_synced": [
-            {
-                "job_id": str(r.job_id),
-                "post_id": str(r.post_id),
-                "label": r.label,
-                "success": r.success,
-                "error": r.error,
-            }
-            for r in metrics
-        ],
-    }
+    return summary.to_dict()

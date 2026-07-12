@@ -101,11 +101,12 @@ async def _reply_performance(session: AsyncSession, user_id: UUID) -> list[Reply
 
 async def _streak_days(session: AsyncSession, user_id: UUID) -> int:
     """Count consecutive days with at least one published reply."""
+    day = func.date_trunc("day", PublishedPost.published_at).label("day")
     result = await session.execute(
-        select(func.date_trunc("day", PublishedPost.published_at))
+        select(day)
         .where(PublishedPost.user_id == user_id, PublishedPost.content_type == "reply")
-        .group_by(func.date_trunc("day", PublishedPost.published_at))
-        .order_by(func.date_trunc("day", PublishedPost.published_at).desc())
+        .group_by(day)
+        .order_by(day.desc())
     )
     days = [row[0].date() if hasattr(row[0], "date") else row[0] for row in result.all()]
     if not days:

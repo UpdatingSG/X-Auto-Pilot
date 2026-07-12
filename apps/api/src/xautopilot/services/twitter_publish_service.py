@@ -7,7 +7,11 @@ from sqlalchemy.orm import selectinload
 from xautopilot.models.content import Draft, DraftVariant
 from xautopilot.models.published_post import PublishedPost
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
-from xautopilot.services.reply_target_service import ReplyTargetNotFoundError, get_reply_target
+from xautopilot.services.reply_target_service import (
+    ReplyTargetNotFoundError,
+    get_reply_target,
+    target_is_publishable,
+)
 from xautopilot.services.metrics_sync_service import schedule_metrics_sync_jobs
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import (
@@ -176,10 +180,14 @@ async def publish_draft(
         metadata = draft.generation_metadata or {}
         in_reply_to = metadata.get("x_tweet_id")
         reply_target_id = metadata.get("reply_target_id")
-        if reply_target_id and not is_valid_x_tweet_id(str(in_reply_to or "")):
+        if reply_target_id:
             try:
                 target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
-                in_reply_to = target.x_tweet_id
+                if target_is_publishable(target):
+                    in_reply_to = target.x_tweet_id
+                    metadata["x_tweet_id"] = target.x_tweet_id
+                    draft.generation_metadata = metadata
+                    await session.flush()
             except (ReplyTargetNotFoundError, ValueError):
                 pass
         if not is_valid_x_tweet_id(str(in_reply_to or "")):
