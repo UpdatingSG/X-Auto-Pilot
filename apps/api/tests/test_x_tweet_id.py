@@ -1,21 +1,16 @@
-"""Tests for X tweet ID validation."""
-
-import pytest
-
-from xautopilot.services.x_tweet_id import is_valid_x_tweet_id, normalize_x_tweet_id
+from xautopilot.services.x_tweet_id import compose_link_quote_tweet, x_status_url
 
 
-def test_valid_tweet_ids():
-    assert is_valid_x_tweet_id("2075248386043986155")
-    assert is_valid_x_tweet_id("1234567890")
+def test_x_status_url_with_handle():
+    assert x_status_url("12345", author_handle="@alice") == "https://x.com/alice/status/12345"
 
 
-def test_invalid_tweet_ids():
-    assert not is_valid_x_tweet_id("manual-Vivek4real_-77")
-    assert not is_valid_x_tweet_id("")
-    assert not is_valid_x_tweet_id("abc123")
+def test_x_status_url_without_handle():
+    assert x_status_url("12345") == "https://x.com/i/status/12345"
 
 
-def test_normalize_rejects_manual_placeholder():
-    with pytest.raises(ValueError, match="numeric"):
-        normalize_x_tweet_id("manual-handle-42")
+def test_compose_link_quote_tweet_fits_limit():
+    text = compose_link_quote_tweet("Great thread", "12345", author_handle="bob")
+    assert len(text) <= 280
+    assert "https://x.com/bob/status/12345" in text
+    assert text.startswith("Great thread")

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.config import settings
+from xautopilot.services.reply_eligibility_service import discovered_tweet_is_safe_for_auto_reply
 from xautopilot.models.reply_target import ReplyTarget
 from xautopilot.services.reply_target_service import (
     _reply_context_metadata,
@@ -19,6 +20,18 @@ from xautopilot.services.voice_profile_service import get_active_voice_profile
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import DiscoveredTweet, XApiError, get_x_client
 from xautopilot.services.x_token_service import XAccountNeedsReauthError, get_valid_access_token
+
+
+def _passes_reply_filter(tweet: DiscoveredTweet, *, replyable_only: bool) -> bool:
+    if getattr(tweet, "reply_block_confirmed", False):
+        return False
+    if not replyable_only:
+        return True
+    return discovered_tweet_is_safe_for_auto_reply(
+        reply_block_confirmed=tweet.reply_block_confirmed,
+        reply_warning=tweet.reply_warning,
+        reply_settings=tweet.reply_settings,
+    )
 
 
 TWEET_URL_RE = re.compile(
@@ -118,6 +131,7 @@ async def discover_reply_targets(
     min_followers: int = 10_000,
     limit: int = 10,
     topics: list[str] | None = None,
+    replyable_only: bool = False,
 ) -> DiscoverResult:
     voice = await get_active_voice_profile(session, user_id)
     if topics:
@@ -183,6 +197,8 @@ async def discover_reply_targets(
             continue
         if tweet.author_followers < min_followers:
             continue
+        if not _passes_reply_filter(tweet, replyable_only=replyable_only):
+            continue
         if len(tweet.tweet_text.strip()) < 20:
             continue
         tweet.relevance_score = _score_tweet(tweet, topic_list)
@@ -200,7 +216,18 @@ async def discover_reply_targets(
             break
 
     if not unique:
-        unique = _mock_discoveries(existing, min_followers, limit) if settings.x_api_mode == "mock" else []
+        unique = (
+            _mock_discoveries(existing, min_followers, limit, replyable_only=replyable_only)
+            if settings.x_api_mode == "mock"
+            else []
+        )
+
+    if replyable_only and not unique and not message:
+        message = (
+            "No posts found that allow open replies. Authors who limit replies usually require "
+            "that they follow you — not just that you follow them. Paste a post URL on Engagement "
+            "or use Quote opportunities."
+        )
 
     return DiscoverResult(targets=unique, source=source, message=message)
 
@@ -220,6 +247,7 @@ async def discover_from_watchlist(
     user_id,
     *,
     limit: int = 10,
+    replyable_only: bool = False,
 ) -> DiscoverResult:
     """Fetch recent tweets from favorite_creators on the voice profile."""
     voice = await get_active_voice_profile(session, user_id)
@@ -263,6 +291,8 @@ async def discover_from_watchlist(
     for tweet in candidates:
         if tweet.x_tweet_id in existing:
             continue
+        if not _passes_reply_filter(tweet, replyable_only=replyable_only):
+            continue
         tweet.relevance_score = _score_tweet(tweet, topic_list) + 0.1
         filtered.append(tweet)
 
@@ -284,25 +314,29 @@ async def discover_from_watchlist(
     )
 
 
-def _mock_discoveries(existing: set[str], min_followers: int, limit: int) -> list[DiscoveredTweet]:
+def _mock_discoveries(
+    existing: set[str], min_followers: int, limit: int, *, replyable_only: bool = False
+) -> list[DiscoveredTweet]:
     samples = [
         DiscoveredTweet(
             x_tweet_id="9000000000000000001",
             x_user_id="1001",
-            author_handle="rakyll",
+            author_handle="indie_dev",
             tweet_text="Most production incidents start as a missing timeout or a retry storm. What guardrail saved you recently?",
-            author_followers=120_000,
+            author_followers=8_500,
             likes=48,
             relevance_score=0.92,
+            reply_settings="everyone",
         ),
         DiscoveredTweet(
             x_tweet_id="9000000000000000002",
             x_user_id="1002",
-            author_handle="swyx",
+            author_handle="backend_bits",
             tweet_text="The best backend engineers I know obsess over observability before they obsess over microservices.",
-            author_followers=250_000,
+            author_followers=12_000,
             likes=120,
             relevance_score=0.9,
+            reply_settings="everyone",
         ),
         DiscoveredTweet(
             x_tweet_id="9000000000000000003",
@@ -337,6 +371,8 @@ def _mock_discoveries(existing: set[str], min_followers: int, limit: int) -> lis
         if tweet.x_tweet_id in existing:
             continue
         if tweet.author_followers < min_followers:
+            continue
+        if not _passes_reply_filter(tweet, replyable_only=replyable_only):
             continue
         out.append(tweet)
         if len(out) >= limit:
@@ -401,6 +437,8 @@ async def import_discovered_targets(
                 conversation_context=_reply_context_metadata(
                     reply_allowed=target.reply_allowed,
                     reply_block_reason=target.reply_block_reason,
+                    reply_warning=target.reply_warning,
+                    reply_block_confirmed=target.reply_block_confirmed,
                     reply_settings=target.reply_settings,
                 ),
             )

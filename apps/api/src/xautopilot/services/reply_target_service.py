@@ -13,11 +13,15 @@ def _reply_context_metadata(
     *,
     reply_allowed: bool = True,
     reply_block_reason: str | None = None,
+    reply_warning: str | None = None,
+    reply_block_confirmed: bool = False,
     reply_settings: str | None = None,
 ) -> dict:
     return {
         "reply_allowed": reply_allowed,
         "reply_block_reason": reply_block_reason,
+        "reply_warning": reply_warning,
+        "reply_block_confirmed": reply_block_confirmed,
         "reply_settings": reply_settings,
     }
 
@@ -143,6 +147,8 @@ async def repair_reply_target_from_url(
     target.conversation_context = _reply_context_metadata(
         reply_allowed=tweet.reply_allowed,
         reply_block_reason=tweet.reply_block_reason,
+        reply_warning=tweet.reply_warning,
+        reply_block_confirmed=tweet.reply_block_confirmed,
         reply_settings=tweet.reply_settings,
     )
     target.expires_at = datetime.now(UTC) + timedelta(hours=48)
@@ -157,15 +163,23 @@ def target_is_publishable(target: ReplyTarget) -> bool:
 
 def target_can_reply(target: ReplyTarget) -> bool:
     meta = reply_meta_from_context(target.conversation_context)
-    if "reply_allowed" in meta:
-        return bool(meta["reply_allowed"])
+    if meta.get("reply_block_confirmed"):
+        return False
     return True
+
+
+def target_reply_warning(target: ReplyTarget) -> str | None:
+    meta = reply_meta_from_context(target.conversation_context)
+    warning = meta.get("reply_warning")
+    return str(warning) if warning else None
 
 
 def target_reply_block_reason(target: ReplyTarget) -> str | None:
     meta = reply_meta_from_context(target.conversation_context)
-    reason = meta.get("reply_block_reason")
-    return str(reason) if reason else None
+    if meta.get("reply_block_confirmed"):
+        reason = meta.get("reply_block_reason")
+        return str(reason) if reason else None
+    return None
 
 
 def to_reply_target_response(target: ReplyTarget):
@@ -182,4 +196,8 @@ def to_reply_target_response(target: ReplyTarget):
         expires_at=target.expires_at,
         reply_allowed=target_can_reply(target),
         reply_block_reason=target_reply_block_reason(target),
+        reply_warning=target_reply_warning(target),
+        reply_block_confirmed=bool(
+            reply_meta_from_context(target.conversation_context).get("reply_block_confirmed")
+        ),
     )

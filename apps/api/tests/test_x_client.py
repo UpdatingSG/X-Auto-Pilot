@@ -17,7 +17,7 @@ def test_parse_discovered_tweets_accepts_single_tweet_object():
                     "id": "42",
                     "username": "rakyll",
                     "public_metrics": {"followers_count": 120_000},
-                    "connection_status": [],
+                    "connection_status": ["following"],
                 }
             ]
         },
@@ -26,8 +26,8 @@ def test_parse_discovered_tweets_accepts_single_tweet_object():
     tweets = client._parse_discovered_tweets(payload, viewer_x_user_id="99")
 
     assert len(tweets) == 1
-    assert tweets[0].reply_allowed is False
-    assert tweets[0].reply_block_reason
+    assert tweets[0].reply_block_confirmed is True
+    assert "don't follow you" in (tweets[0].reply_block_reason or "").lower()
 
 
 def test_parse_discovered_tweets_accepts_tweet_list():

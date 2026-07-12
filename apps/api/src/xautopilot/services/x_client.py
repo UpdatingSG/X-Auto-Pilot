@@ -41,6 +41,8 @@ class DiscoveredTweet:
     relevance_score: float = 0.0
     reply_allowed: bool = True
     reply_block_reason: str | None = None
+    reply_warning: str | None = None
+    reply_block_confirmed: bool = False
     reply_settings: str | None = None
 
 
@@ -69,7 +71,12 @@ class XClient(Protocol):
     ) -> TweetPostResult: ...
 
     async def post_quote_tweet(
-        self, access_token: str, text: str, *, quote_tweet_id: str
+        self,
+        access_token: str,
+        text: str,
+        *,
+        quote_tweet_id: str,
+        author_handle: str | None = None,
     ) -> TweetPostResult: ...
 
     async def post_thread(self, access_token: str, tweets: list[str]) -> ThreadPostResult: ...
@@ -168,7 +175,12 @@ class MockXClient:
         return TweetPostResult(x_tweet_id=tweet_id)
 
     async def post_quote_tweet(
-        self, access_token: str, text: str, *, quote_tweet_id: str
+        self,
+        access_token: str,
+        text: str,
+        *,
+        quote_tweet_id: str,
+        author_handle: str | None = None,
     ) -> TweetPostResult:
         tweet_id = str(random.randint(1_000_000_000, 9_999_999_999))
         self.posts.append(
@@ -177,6 +189,7 @@ class MockXClient:
                 "text": text,
                 "x_tweet_id": tweet_id,
                 "quote_tweet_id": quote_tweet_id,
+                "author_handle": author_handle or "",
             }
         )
         return TweetPostResult(x_tweet_id=tweet_id)
@@ -282,13 +295,24 @@ class LiveXClient:
         return TweetPostResult(x_tweet_id=data["id"])
 
     async def post_quote_tweet(
-        self, access_token: str, text: str, *, quote_tweet_id: str
+        self,
+        access_token: str,
+        text: str,
+        *,
+        quote_tweet_id: str,
+        author_handle: str | None = None,
     ) -> TweetPostResult:
+        from xautopilot.services.x_tweet_id import compose_link_quote_tweet
+
+        # Native quote_tweet_id requires Enterprise API. Link-in-text works on all tiers.
+        link_text = compose_link_quote_tweet(
+            text, quote_tweet_id, author_handle=author_handle
+        )
         response = await _live_request(
             "POST",
             f"{settings.x_api_base_url}/tweets",
             access_token,
-            json={"text": text, "quote_tweet_id": quote_tweet_id},
+            json={"text": link_text},
         )
         data = response.json()["data"]
         return TweetPostResult(x_tweet_id=data["id"])
@@ -368,7 +392,7 @@ class LiveXClient:
             metrics = tweet.get("public_metrics") or {}
             username = author.get("username") or "unknown"
             user_metrics = author.get("public_metrics") or {}
-            reply_allowed, reply_block_reason = self._reply_eligibility(tweet, author, viewer_x_user_id)
+            eligibility = self._reply_eligibility(tweet, author, viewer_x_user_id)
             discovered.append(
                 DiscoveredTweet(
                     x_tweet_id=str(tweet["id"]),
@@ -377,16 +401,18 @@ class LiveXClient:
                     tweet_text=str(tweet.get("text") or ""),
                     author_followers=int(user_metrics.get("followers_count") or 0),
                     likes=int(metrics.get("like_count") or 0),
-                    reply_allowed=reply_allowed,
-                    reply_block_reason=reply_block_reason,
-                    reply_settings=tweet.get("reply_settings"),
+                    reply_allowed=eligibility.can_attempt and not eligibility.confirmed_block,
+                    reply_block_reason=eligibility.block_reason,
+                    reply_warning=eligibility.warning,
+                    reply_block_confirmed=eligibility.confirmed_block,
+                    reply_settings=eligibility.reply_settings,
                 )
             )
         return discovered
 
     def _reply_eligibility(
         self, tweet: dict, author_user: dict, viewer_x_user_id: str | None
-    ) -> tuple[bool, str | None]:
+    ):
         from xautopilot.services.reply_eligibility_service import assess_reply_eligibility
 
         return assess_reply_eligibility(tweet, author_user, viewer_x_user_id)

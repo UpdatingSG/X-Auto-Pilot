@@ -11,9 +11,7 @@ from xautopilot.services.draft_service import DraftNotFoundError, get_draft
 from xautopilot.services.reply_target_service import (
     ReplyTargetNotFoundError,
     get_reply_target,
-    target_can_reply,
     target_is_publishable,
-    target_reply_block_reason,
 )
 from xautopilot.services.reply_eligibility_service import humanize_x_reply_error
 from xautopilot.services.metrics_sync_service import schedule_metrics_sync_jobs
@@ -123,26 +121,25 @@ async def _publish_with_client(
         raise XRateLimitError(exc.retry_after_seconds) from exc
     except XApiError as exc:
         if exc.status_code == 403:
-            raise XPublishForbiddenError(humanize_x_reply_error(str(exc))) from exc
+            raise XPublishForbiddenError(str(exc)) from exc
         raise XPublishError(humanize_x_reply_error(str(exc))) from exc
 
 
-async def _ensure_reply_allowed(
+async def _preflight_reply_publish(
     session: AsyncSession,
     user_id: UUID,
-    *,
     in_reply_to: str,
     reply_target=None,
 ) -> None:
+    """Block publish early when we know X will reject (e.g. author doesn't follow you)."""
     if settings.x_api_mode == "mock":
         return
+    from xautopilot.services.reply_target_service import target_reply_block_reason
 
-    if reply_target is not None and not target_can_reply(reply_target):
+    if reply_target is not None:
         reason = target_reply_block_reason(reply_target)
-        raise DraftNotPublishableError(
-            reason
-            or "X will block this reply because of the author's reply settings. Try a quote-tweet instead."
-        )
+        if reason:
+            raise DraftNotPublishableError(reason)
 
     account = await get_x_account(session, user_id)
     client = get_x_client()
@@ -150,11 +147,8 @@ async def _ensure_reply_allowed(
     tweet = await client.lookup_tweet(
         access_token, in_reply_to, viewer_x_user_id=account.x_user_id
     )
-    if not tweet.reply_allowed:
-        raise DraftNotPublishableError(
-            tweet.reply_block_reason
-            or "X will block this reply because of the author's reply settings. Try a quote-tweet instead."
-        )
+    if tweet.reply_block_confirmed and tweet.reply_block_reason:
+        raise DraftNotPublishableError(tweet.reply_block_reason)
 
 
 async def get_published_post_for_draft(
@@ -231,17 +225,31 @@ async def publish_draft(
                 "Re-import the post via URL on the Engagement page, or add the tweet ID from the post URL."
             )
 
-        await _ensure_reply_allowed(
-            session, user_id, in_reply_to=str(in_reply_to), reply_target=reply_target
-        )
+        # X blocks stranger replies; native quote_tweet_id needs Enterprise API — use link quote.
+        used_quote_fallback = True
+        author_handle = reply_target.author_handle if reply_target else None
 
-        async def _post_reply(access_token: str):
-            return await client.post_reply(
-                access_token, text, in_reply_to_tweet_id=str(in_reply_to)
+        async def _post_link_quote(access_token: str):
+            return await client.post_quote_tweet(
+                access_token,
+                text,
+                quote_tweet_id=str(in_reply_to),
+                author_handle=author_handle,
             )
 
-        result = await _publish_with_client(session, user_id, client, _post_reply)
+        try:
+            result = await _publish_with_client(session, user_id, client, _post_link_quote)
+        except (XPublishForbiddenError, XPublishError) as exc:
+            raise XPublishForbiddenError(
+                f"X blocked publishing this engagement post: {exc}. "
+                "Try posting manually on X or build more account activity first."
+            ) from None
+
         root_tweet_id = result.x_tweet_id
+        metadata = draft.generation_metadata or {}
+        metadata["published_as_quote_fallback"] = True
+        metadata["quote_tweet_id"] = str(in_reply_to)
+        draft.generation_metadata = metadata
     elif draft.content_type == "quote_tweet":
         text = preview
         if not text or len(text) > 280:
@@ -249,10 +257,13 @@ async def publish_draft(
         metadata = draft.generation_metadata or {}
         quote_id = metadata.get("quote_tweet_id") or metadata.get("x_tweet_id")
         reply_target_id = metadata.get("reply_target_id")
-        if reply_target_id and not is_valid_x_tweet_id(str(quote_id or "")):
+        quote_author: str | None = None
+        if reply_target_id:
             try:
                 target = await get_reply_target(session, user_id, UUID(str(reply_target_id)))
-                quote_id = target.x_tweet_id
+                quote_author = target.author_handle
+                if not is_valid_x_tweet_id(str(quote_id or "")):
+                    quote_id = target.x_tweet_id
             except (ReplyTargetNotFoundError, ValueError):
                 pass
         if not is_valid_x_tweet_id(str(quote_id or "")):
@@ -260,7 +271,7 @@ async def publish_draft(
 
         async def _post_quote(access_token: str):
             return await client.post_quote_tweet(
-                access_token, text, quote_tweet_id=str(quote_id)
+                access_token, text, quote_tweet_id=str(quote_id), author_handle=quote_author
             )
 
         result = await _publish_with_client(session, user_id, client, _post_quote)
@@ -279,12 +290,16 @@ async def publish_draft(
     snapshot = _content_snapshot(draft)
     if thread_ids:
         snapshot["thread_ids"] = thread_ids
+    metadata = draft.generation_metadata or {}
+    if metadata.get("published_as_quote_fallback"):
+        snapshot["published_as"] = "quote_tweet_fallback"
+        snapshot["quote_tweet_id"] = metadata.get("quote_tweet_id")
 
     post = PublishedPost(
         user_id=user_id,
         draft_id=draft_id,
         x_tweet_id=root_tweet_id,
-        content_type=draft.content_type,
+        content_type="quote_tweet" if metadata.get("published_as_quote_fallback") else draft.content_type,
         content_snapshot=snapshot,
         preview_text=preview,
     )

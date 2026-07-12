@@ -22,6 +22,7 @@ export default function PublishQueuePage() {
   const [account, setAccount] = useState<XAccount | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   async function load() {
     const token = getToken();
@@ -35,7 +36,10 @@ export default function PublishQueuePage() {
     else setAccount(null);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setNowMs(Date.now());
+    load();
+  }, []);
 
   async function handleCancel(draftId: string) {
     const token = getToken();
@@ -51,7 +55,11 @@ export default function PublishQueuePage() {
     setMessage(null);
     try {
       const post = await api.publishDraft(token, draftId);
-      setMessage(`Published to X (tweet ${post.x_tweet_id})`);
+      setMessage(
+        post.content_type === "quote_tweet"
+          ? `Published with link to original post (${post.x_tweet_id}). X blocks API replies for many accounts, so we posted as a linked quote instead.`
+          : `Published to X (tweet ${post.x_tweet_id})`,
+      );
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Publish failed");
@@ -92,7 +100,7 @@ export default function PublishQueuePage() {
               <p className="mt-2 text-white">{item.preview_text}</p>
               <p className="mt-2 text-sm text-sky-400">
                 {formatWhen(item.scheduled_at)}
-                {new Date(item.scheduled_at) < new Date() && (
+                {nowMs !== null && new Date(item.scheduled_at).getTime() < nowMs && (
                   <span className="ml-2 text-amber-400">· Overdue</span>
                 )}
               </p>

@@ -26,6 +26,8 @@ class ReplyTargetResponse(BaseModel):
     expires_at: datetime | None
     reply_allowed: bool = True
     reply_block_reason: str | None = None
+    reply_warning: str | None = None
+    reply_block_confirmed: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -40,6 +42,8 @@ class DiscoveredReplyTarget(BaseModel):
     relevance_score: float = 0.0
     reply_allowed: bool = True
     reply_block_reason: str | None = None
+    reply_warning: str | None = None
+    reply_block_confirmed: bool = False
 
 
 class DiscoverReplyTargetsRequest(BaseModel):

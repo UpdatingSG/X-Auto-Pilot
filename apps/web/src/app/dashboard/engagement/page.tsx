@@ -141,9 +141,11 @@ export default function EngagementPage() {
       const target = await api.importReplyTargetFromUrl(token, tweetUrl.trim());
       setTweetUrl("");
       setMessage(
-        target.reply_allowed === false
-          ? `Imported, but X will block replies: ${target.reply_block_reason ?? "author restricts replies"}. Follow them or use a quote-tweet.`
-          : "Reply target added from URL.",
+        target.reply_block_confirmed
+          ? `Imported, but X will block replies: ${target.reply_block_reason ?? "author restricts replies"}.`
+          : target.reply_warning
+            ? `Imported with note: ${target.reply_warning}`
+            : "Reply target added from URL.",
       );
       await load();
     } catch (err) {
@@ -211,6 +213,9 @@ export default function EngagementPage() {
       <p className="mb-6 max-w-2xl text-zinc-400">
         Paste an X post URL to reply to it. Use <strong className="text-zinc-200">Daily Briefing</strong> for
         the one-click workflow — this page is for manual fixes and discovery.
+        If X blocks a reply (common when authors limit replies or your account is anti-spam restricted),
+        publish will post your comment with a link to the original (works on all X API tiers).
+        Following someone does not mean they follow you — authors who limit replies usually require a follow-back.
       </p>
 
       <div className="mb-8 flex flex-wrap gap-3">
@@ -337,11 +342,14 @@ export default function EngagementPage() {
                     {!isValidTweetId(target.x_tweet_id) && " — invalid, fix with URL below"}
                   </p>
                 )}
-                {target.reply_allowed === false && (
-                  <p className="mt-2 text-sm text-amber-300">
+                {target.reply_block_confirmed && (
+                  <p className="mt-2 text-sm text-red-300">
                     Replies blocked: {target.reply_block_reason ?? "Author restricts who can reply."}
-                    {" "}Follow them on X first, or use Quote opportunities instead.
+                    {" "}Use Quote opportunities instead.
                   </p>
+                )}
+                {!target.reply_block_confirmed && target.reply_warning && (
+                  <p className="mt-2 text-sm text-amber-300">{target.reply_warning}</p>
                 )}
               </div>
             </div>
@@ -368,10 +376,10 @@ export default function EngagementPage() {
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => handleDraftReply(target.id)}
-                disabled={!isValidTweetId(target.x_tweet_id) || target.reply_allowed === false}
+                disabled={!isValidTweetId(target.x_tweet_id) || target.reply_block_confirmed}
                 className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm hover:bg-sky-500 disabled:opacity-50"
               >
-                {target.reply_allowed === false ? "Reply blocked by X" : "Draft reply now"}
+                {target.reply_block_confirmed ? "Reply blocked by X" : "Draft reply now"}
               </button>
               <button
                 onClick={() => handleDelete(target.id)}

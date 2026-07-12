@@ -199,21 +199,48 @@ async def run_quick_reply_workflow(
     *,
     limit: int = 3,
 ) -> dict:
-    """Discover → import → draft replies in one step."""
+    """Discover → import → draft replies in one step (replyable posts only)."""
     from xautopilot.services.draft_service import generate_reply_draft_from_target
     from xautopilot.services.reply_discovery_service import (
+        discover_from_watchlist,
         discover_reply_targets,
         import_discovered_targets,
     )
-    from xautopilot.services.reply_target_service import target_can_reply, target_is_publishable
+    from xautopilot.services.reply_target_service import target_is_publishable
 
-    discovery = await discover_reply_targets(session, user_id, limit=8)
-    if not discovery.targets:
-        return {"imported": 0, "drafted": 0, "message": "No fresh reply opportunities found right now."}
+    candidates: list = []
+    watchlist = await discover_from_watchlist(
+        session, user_id, limit=8, replyable_only=True
+    )
+    candidates.extend(watchlist.targets)
 
-    imported = await import_discovered_targets(session, user_id, discovery.targets[:5])
-    publishable = [t for t in imported if target_is_publishable(t) and target_can_reply(t)]
-    blocked = len(imported) - len(publishable)
+    if len(candidates) < limit:
+        discovery = await discover_reply_targets(
+            session,
+            user_id,
+            limit=15,
+            min_followers=2_000,
+            replyable_only=True,
+        )
+        seen = {t.x_tweet_id for t in candidates}
+        for tweet in discovery.targets:
+            if tweet.x_tweet_id not in seen:
+                candidates.append(tweet)
+                seen.add(tweet.x_tweet_id)
+
+    if not candidates:
+        return {
+            "imported": 0,
+            "drafted": 0,
+            "message": (
+                "No posts found that allow open replies. Authors who limit replies usually require "
+                "that they follow you (not the other way around). Paste a post URL on Engagement "
+                "or use Quote opportunities."
+            ),
+        }
+
+    imported = await import_discovered_targets(session, user_id, candidates[:5])
+    publishable = [t for t in imported if target_is_publishable(t)]
     drafted = 0
     for target in publishable[:limit]:
         await generate_reply_draft_from_target(session, user_id, target.id)
@@ -223,13 +250,9 @@ async def run_quick_reply_workflow(
         "imported": len(imported),
         "drafted": drafted,
         "skipped_invalid": len(imported) - len(publishable),
-        "skipped_reply_blocked": blocked,
         "message": (
-            f"Imported {len(imported)} targets and created {drafted} reply drafts."
-            + (
-                f" Skipped {blocked} with restricted replies — follow the author or quote-tweet instead."
-                if blocked
-                else ""
-            )
+            f"Created {drafted} reply drafts from posts that allow open replies."
+            if drafted
+            else "Imported targets but could not create drafts."
         ),
     }

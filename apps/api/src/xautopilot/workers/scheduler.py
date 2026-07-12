@@ -16,10 +16,16 @@ async def _scheduled_tick() -> None:
     async with async_session_factory() as session:
         try:
             summary = await run_worker_tick(session)
-            pub_ok = sum(1 for p in summary["published"] if p["success"])
-            met_ok = sum(1 for m in summary["metrics_synced"] if m["success"])
-            if pub_ok or met_ok:
-                log.info("Worker tick: published=%s metrics_synced=%s", pub_ok, met_ok)
+            pub_ok = summary.get("published_ok", 0)
+            met_ok = summary.get("metrics_ok", 0)
+            if pub_ok or met_ok or summary.get("published_failed") or summary.get("metrics_failed"):
+                log.info(
+                    "Worker tick: published_ok=%s published_failed=%s metrics_ok=%s metrics_failed=%s",
+                    pub_ok,
+                    summary.get("published_failed", 0),
+                    met_ok,
+                    summary.get("metrics_failed", 0),
+                )
         except Exception:
             await session.rollback()
             log.exception("Worker tick failed")

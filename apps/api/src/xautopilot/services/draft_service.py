@@ -228,7 +228,7 @@ async def generate_reply_draft_from_target(
         reason = target_reply_block_reason(target)
         raise InvalidReplyTargetError(
             reason
-            or "X will block replies to this post. Follow the author, get mentioned, or use a quote-tweet."
+            or "X will block replies to this post. Ask the author to follow you, get mentioned, or draft a quote-tweet."
         )
 
     voice = await get_active_voice_profile(session, user_id)

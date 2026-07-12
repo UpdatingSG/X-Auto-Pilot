@@ -25,9 +25,12 @@ const navItems = [
 export function AppShell({ children, title }: { children: React.ReactNode; title: string }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [email, setEmail] = useState<string | null>(() => getUserEmail());
+  const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
+    const cached = getUserEmail();
+    if (cached) setEmail(cached);
+
     const token = getToken();
     if (!token) {
       router.replace("/login");

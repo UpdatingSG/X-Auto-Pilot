@@ -88,6 +88,8 @@ export type ReplyTarget = {
   expires_at: string | null;
   reply_allowed?: boolean;
   reply_block_reason?: string | null;
+  reply_warning?: string | null;
+  reply_block_confirmed?: boolean;
 };
 
 export type DiscoveredReplyTarget = {
@@ -100,6 +102,8 @@ export type DiscoveredReplyTarget = {
   relevance_score: number;
   reply_allowed?: boolean;
   reply_block_reason?: string | null;
+  reply_warning?: string | null;
+  reply_block_confirmed?: boolean;
 };
 
 export type PlanComposition = {
