@@ -8,6 +8,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from xautopilot.database import Base
 
 DEFAULT_WINDOWS = [
+    {"start": "09:00", "end": "12:00", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"start": "13:00", "end": "17:00", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"start": "18:00", "end": "22:00", "days": [1, 2, 3, 4, 5, 6, 7]},
+]
+
+# Previous narrow windows (45 min) could only fit ~1 post each with collision gaps.
+LEGACY_NARROW_WINDOWS = [
     {"start": "09:00", "end": "09:45", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"start": "13:00", "end": "13:45", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"start": "19:00", "end": "19:45", "days": [1, 2, 3, 4, 5, 6, 7]},

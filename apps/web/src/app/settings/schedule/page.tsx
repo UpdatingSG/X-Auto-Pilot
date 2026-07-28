@@ -58,8 +58,9 @@ export default function ScheduleSettingsPage() {
   return (
     <AppShell title="Posting Schedule">
       <p className="mb-6 max-w-2xl text-zinc-400">
-        Growth mode prioritizes replies over broadcasting. Replies use their own daily quota and can
-        auto-schedule when drafts are generated from the Engagement or Briefing pages.
+        Growth mode prioritizes replies over broadcasting. Replies use their own daily quota
+        (up to 50) and pack across morning / afternoon / evening windows — not capped at 3/day.
+        Auto-schedule can place reply drafts when generated from Engagement or Briefing.
       </p>
 
       {schedule && (

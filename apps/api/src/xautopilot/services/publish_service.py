@@ -58,6 +58,27 @@ def _content_type_group(content_type: str) -> list[str]:
     return ["tweet", "thread"]
 
 
+def _max_per_window(schedule, content_type: str) -> int:
+    """Replies/quotes pack into windows; originals stay sparse (1 per window)."""
+    n_windows = max(1, len(schedule.posting_windows or []))
+    quota = max(0, _quota_for_draft(schedule, content_type))
+    if content_type == "reply":
+        # e.g. 10 replies / 3 windows → 4 per window (ceil)
+        return max(2, (quota + n_windows - 1) // n_windows) if quota else 1
+    if content_type == "quote_tweet":
+        return max(1, (quota + n_windows - 1) // n_windows) if quota else 1
+    return 1
+
+
+def _min_gap_minutes(content_type: str) -> int:
+    # Replies can be denser; originals keep a more human gap.
+    if content_type == "reply":
+        return 12
+    if content_type == "quote_tweet":
+        return 15
+    return 20
+
+
 async def schedule_draft(
     session: AsyncSession,
     user_id: UUID,
@@ -88,7 +109,8 @@ async def schedule_draft(
             timezone=timezone,
             jitter_minutes=schedule.jitter_minutes,
             rng=rng,
-            max_per_window=1,
+            max_per_window=_max_per_window(schedule, draft.content_type),
+            min_gap_minutes=_min_gap_minutes(draft.content_type),
             daily_quota=daily_quota,
             daily_quota_occupied=type_occupied,
         )

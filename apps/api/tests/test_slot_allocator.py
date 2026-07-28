@@ -4,10 +4,11 @@ import random
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
+from xautopilot.models.schedule import DEFAULT_WINDOWS
 from xautopilot.services.slot_allocator import allocate_slot, count_in_window, parse_windows
 
 
-WINDOWS = [
+NARROW_WINDOWS = [
     {"start": "09:00", "end": "09:45", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"start": "13:00", "end": "13:45", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"start": "19:00", "end": "19:45", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -27,7 +28,7 @@ def test_three_drafts_use_three_different_windows():
 
     for _ in range(3):
         slot = allocate_slot(
-            posting_windows=WINDOWS,
+            posting_windows=NARROW_WINDOWS,
             occupied=occupied,
             timezone="UTC",
             jitter_minutes=0,
@@ -39,7 +40,7 @@ def test_three_drafts_use_three_different_windows():
         slots.append(slot)
         occupied.append(slot)
 
-    windows = parse_windows(WINDOWS)
+    windows = parse_windows(NARROW_WINDOWS)
     tz = ZoneInfo("UTC")
     used_windows: set[int] = set()
     for slot in slots:
@@ -54,7 +55,7 @@ def test_fourth_draft_moves_to_next_day():
     occupied: list[datetime] = []
     for i in range(3):
         slot = allocate_slot(
-            posting_windows=WINDOWS,
+            posting_windows=NARROW_WINDOWS,
             occupied=occupied,
             timezone="UTC",
             jitter_minutes=0,
@@ -66,7 +67,7 @@ def test_fourth_draft_moves_to_next_day():
         occupied.append(slot)
 
     fourth = allocate_slot(
-        posting_windows=WINDOWS,
+        posting_windows=NARROW_WINDOWS,
         occupied=occupied,
         timezone="UTC",
         jitter_minutes=0,
@@ -87,7 +88,7 @@ def test_daily_quota_blocks_extra_posts_same_day():
         _slot_at(19, 10, target),
     ]
     next_slot = allocate_slot(
-        posting_windows=WINDOWS,
+        posting_windows=NARROW_WINDOWS,
         occupied=occupied,
         timezone="UTC",
         jitter_minutes=0,
@@ -97,3 +98,29 @@ def test_daily_quota_blocks_extra_posts_same_day():
         daily_quota=3,
     )
     assert next_slot.astimezone(ZoneInfo("UTC")).date() == date(2030, 1, 8)
+
+
+def test_wide_windows_pack_ten_replies_same_day():
+    rng = random.Random(21)
+    occupied: list[datetime] = []
+    target = date(2030, 1, 7)
+
+    for _ in range(10):
+        slot = allocate_slot(
+            posting_windows=DEFAULT_WINDOWS,
+            occupied=occupied,
+            timezone="UTC",
+            jitter_minutes=0,
+            target_date=target,
+            rng=rng,
+            max_per_window=4,
+            min_gap_minutes=12,
+            daily_quota=10,
+        )
+        occupied.append(slot)
+
+    dates = {s.astimezone(ZoneInfo("UTC")).date() for s in occupied}
+    assert dates == {target}
+    sorted_slots = sorted(occupied)
+    for prev, nxt in zip(sorted_slots, sorted_slots[1:]):
+        assert (nxt - prev).total_seconds() >= 12 * 60

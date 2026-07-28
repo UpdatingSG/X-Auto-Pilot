@@ -98,6 +98,39 @@ def avoid_collisions(
     return slot
 
 
+def _occupied_in_window(
+    occupied_utc: list[datetime], window: PostingWindow, target: date, tz: ZoneInfo
+) -> list[datetime]:
+    return sorted(
+        other
+        for other in occupied_utc
+        if other.astimezone(tz).date() == target
+        and window.start <= other.astimezone(tz).time() <= window.end
+    )
+
+
+def _candidate_slots_for_window(
+    window: PostingWindow,
+    target_date: date,
+    tz: ZoneInfo,
+    occupied_utc: list[datetime],
+    min_gap_minutes: int,
+    rng: random.Random,
+    attempts: int,
+) -> list[datetime]:
+    """Build candidate times: pack after latest in-window slot, then random fills."""
+    candidates: list[datetime] = []
+    in_window = _occupied_in_window(occupied_utc, window, target_date, tz)
+    if in_window:
+        candidates.append(in_window[-1] + timedelta(minutes=min_gap_minutes))
+    else:
+        candidates.append(datetime.combine(target_date, window.start, tzinfo=tz))
+
+    for _ in range(max(attempts, 1)):
+        candidates.append(_random_time_in_window(window, target_date, tz, rng))
+    return candidates
+
+
 def allocate_slot(
     posting_windows: list[dict],
     occupied: list[datetime],
@@ -111,7 +144,7 @@ def allocate_slot(
     max_days_ahead: int = 14,
     daily_quota_occupied: list[datetime] | None = None,
 ) -> datetime:
-    """Pick the next available window: one post per window, then next window or next day."""
+    """Pick the next available slot, packing multiple posts per window when allowed."""
     rng = rng or random.Random()
     tz = ZoneInfo(timezone)
     start_date = target_date or datetime.now(tz).date()
@@ -139,26 +172,37 @@ def allocate_slot(
             if count_in_window(occupied_utc, window, candidate_date, tz) >= max_per_window:
                 continue
 
-            slot = _random_time_in_window(window, candidate_date, tz, rng)
+            attempts = max(8, max_per_window * 3)
+            for raw_slot in _candidate_slots_for_window(
+                window,
+                candidate_date,
+                tz,
+                occupied_utc,
+                min_gap_minutes,
+                rng,
+                attempts,
+            ):
+                slot = raw_slot
+                if jitter_minutes > 0:
+                    jitter_secs = rng.randint(0, jitter_minutes * 60)
+                    if rng.random() > 0.5:
+                        jitter_secs = -jitter_secs
+                    slot = slot + timedelta(seconds=jitter_secs)
 
-            jitter_secs = rng.randint(0, jitter_minutes * 60)
-            if rng.random() > 0.5:
-                jitter_secs = -jitter_secs
-            slot = slot + timedelta(seconds=jitter_secs)
-            slot = _clamp_to_window(slot, window, candidate_date, tz)
-            slot = de_round_time(slot, rng)
-            slot = _clamp_to_window(slot, window, candidate_date, tz)
+                slot = _clamp_to_window(slot, window, candidate_date, tz)
+                slot = de_round_time(slot, rng)
+                slot = _clamp_to_window(slot, window, candidate_date, tz)
 
-            if not _slot_fits_window(slot, window, candidate_date, tz):
-                continue
+                if not _slot_fits_window(slot, window, candidate_date, tz):
+                    continue
 
-            slot = avoid_collisions(slot, occupied_utc, min_gap_minutes)
-            if not _slot_fits_window(slot, window, candidate_date, tz):
-                continue
+                slot = avoid_collisions(slot, occupied_utc, min_gap_minutes)
+                if not _slot_fits_window(slot, window, candidate_date, tz):
+                    continue
 
-            if slot <= now:
-                continue
+                if slot <= now:
+                    continue
 
-            return _ensure_utc(slot)
+                return _ensure_utc(slot)
 
     raise ValueError("No available posting slot within the configured horizon")
