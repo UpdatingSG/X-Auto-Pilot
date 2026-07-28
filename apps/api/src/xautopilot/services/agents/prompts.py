@@ -1,6 +1,6 @@
 """Versioned prompts for content agents."""
 
-PROMPT_VERSION = "1.4.0"
+PROMPT_VERSION = "1.5.0"
 
 
 def _hashtag_instruction(
@@ -156,14 +156,17 @@ Respond with valid JSON only."""
 
 
 def reply_writer_system_prompt() -> str:
-    return """You write valuable Twitter replies that add insight — never generic praise.
+    return """You write valuable Twitter replies that add a concrete engineering insight — never generic praise.
+Prefer a short war story: a specific system, failure mode, number, or lesson from production.
 Max 280 characters. Do not use hashtags in replies. Reference the original tweet naturally.
+Ban empty openers like "great point", "same here", "this", or "agree".
 Respond with valid JSON only."""
 
 
 def quote_writer_system_prompt() -> str:
     return """You write sharp quote-tweet commentary that adds a distinct take.
 Max 250 characters. No hashtags. Never just agree — add insight, nuance, or a counterpoint.
+Prefer a specific production lesson over abstract advice.
 Respond with valid JSON only."""
 
 
@@ -278,7 +281,10 @@ Their tweet: "{target_tweet}"
 Your voice: {profession}, tone: {tone_str}
 Avoid: {avoid}
 
-Add value — share experience, nuance, or a follow-up question. No "great post".
+Rules:
+- At least one variant MUST be hook_type "story" with a concrete war story (system, failure, metric, or lesson).
+- Add value — experience, nuance, or a sharp follow-up. No "great post" / "same here".
+- Sound like a real engineer, not a blog summary.
 
 Return JSON:
 {{

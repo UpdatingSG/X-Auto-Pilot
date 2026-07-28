@@ -9,11 +9,15 @@ import { getToken } from "@/lib/auth";
 export default function VoiceProfilePage() {
   const [profession, setProfession] = useState("Backend Engineer");
   const [bio, setBio] = useState("");
-  const [topics, setTopics] = useState("System Design, Distributed Systems, AI");
+  const [topics, setTopics] = useState(
+    "System Design, Distributed Systems, Observability, Postgres, Production incidents",
+  );
   const [tone, setTone] = useState("technical, helpful, honest");
-  const [avoid, setAvoid] = useState("leverage, synergy, game-changer");
-  const [neverDiscuss, setNeverDiscuss] = useState("politics, crypto shilling");
-  const [watchlist, setWatchlist] = useState("swyx, rakyll, kelseyhightower");
+  const [avoid, setAvoid] = useState("leverage, synergy, game-changer, let's grow together");
+  const [neverDiscuss, setNeverDiscuss] = useState("politics, crypto shilling, NFT promo");
+  const [watchlist, setWatchlist] = useState(
+    "mipsytipsy, rakyll, copyconstruct, theburningmonk, brandur, swyx, abndrsn, tekbog",
+  );
   const [version, setVersion] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

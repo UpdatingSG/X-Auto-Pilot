@@ -82,6 +82,7 @@ async def discover_targets(
             db,
             current_user.id,
             min_followers=data.min_followers,
+            max_followers=data.max_followers,
             limit=data.limit,
             topics=data.topics,
             force_refresh=True,

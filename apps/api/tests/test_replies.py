@@ -88,7 +88,7 @@ async def test_discover_reply_targets(client: AsyncClient):
 
     response = await client.post(
         "/v1/reply-targets/discover",
-        json={"min_followers": 10000, "limit": 5},
+        json={"min_followers": 2000, "max_followers": 50000, "limit": 5},
         headers=headers,
     )
 
@@ -96,7 +96,8 @@ async def test_discover_reply_targets(client: AsyncClient):
     body = response.json()
     assert len(body["targets"]) >= 1
     assert body["targets"][0]["x_tweet_id"]
-    assert body["targets"][0]["author_followers"] >= 10000
+    assert body["targets"][0]["author_followers"] >= 2000
+    assert body["targets"][0]["author_followers"] <= 50000
 
 
 async def test_import_discovered_reply_targets(client: AsyncClient):

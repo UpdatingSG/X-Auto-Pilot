@@ -518,7 +518,12 @@ export const api = {
 
   discoverReplyTargets: (
     token: string,
-    data?: { min_followers?: number; limit?: number; topics?: string[] },
+    data?: {
+      min_followers?: number;
+      max_followers?: number | null;
+      limit?: number;
+      topics?: string[];
+    },
   ) =>
     request<{ source: string; message?: string; targets: DiscoveredReplyTarget[] }>(
       "/v1/reply-targets/discover",

@@ -61,22 +61,36 @@ DEFAULT_TOPICS = [
     "system design",
     "distributed systems",
     "postgresql",
+    "observability",
+    "kubernetes",
     "AI engineering",
-    "LLM",
-    "devops",
+    "production incidents",
 ]
+
+# Prefer mid-size niche accounts: enough reach to matter, small enough that replies get seen.
+DEFAULT_MIN_FOLLOWERS = 2_000
+DEFAULT_MAX_FOLLOWERS = 50_000
 
 # Fallback when search API is unavailable on the connected X app tier.
 CURATED_ACCOUNTS = [
     "rakyll",
     "mipsytipsy",
     "swyx",
-    "kelseyhightower",
+    "copyconstruct",
+    "theburningmonk",
+    "brandur",
     "abndrsn",
     "tekbog",
-    "dan_abramov",
-    "levelsio",
 ]
+
+_NEWS_PROMO_RE = re.compile(
+    r"\b("
+    r"breaking|just raised|series [a-d]\b|we're hiring|we are hiring|"
+    r"newsletter|sponsored|giveaway|join our|sign up|limited seats|"
+    r"nft|crypto giveaway|airdrop|subscribe now|link in bio"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 class ReplyDiscoveryError(Exception):
@@ -108,13 +122,19 @@ def _build_search_query(topics: list[str]) -> str:
     return f"({keyword_clause}) -is:retweet -is:reply lang:en"
 
 
+def _looks_like_news_or_promo(text: str) -> bool:
+    return bool(_NEWS_PROMO_RE.search(text))
+
+
 def _score_tweet(tweet: DiscoveredTweet, topics: list[str]) -> float:
+    """Score for reply discovery — prefer mid-size niche accounts over mega news feeds."""
     text = tweet.tweet_text.lower()
     score = 0.35
-    if tweet.author_followers >= 10_000:
-        score += 0.15
-    if tweet.author_followers >= 50_000:
-        score += 0.1
+    followers = tweet.author_followers
+    if 2_000 <= followers <= 50_000:
+        score += 0.2
+    elif followers > 100_000:
+        score -= 0.1
     if tweet.likes >= 5:
         score += 0.1
     if tweet.likes >= 25:
@@ -123,7 +143,9 @@ def _score_tweet(tweet: DiscoveredTweet, topics: list[str]) -> float:
         score += 0.1
     if any(topic.lower() in text for topic in topics):
         score += 0.15
-    return round(min(score, 1.0), 3)
+    if _looks_like_news_or_promo(tweet.tweet_text):
+        score -= 0.25
+    return round(min(max(score, 0.0), 1.0), 3)
 
 
 async def _existing_tweet_ids(session: AsyncSession, user_id) -> set[str]:
@@ -145,7 +167,8 @@ async def discover_reply_targets(
     session: AsyncSession,
     user_id,
     *,
-    min_followers: int = 10_000,
+    min_followers: int = DEFAULT_MIN_FOLLOWERS,
+    max_followers: int | None = DEFAULT_MAX_FOLLOWERS,
     limit: int = 10,
     topics: list[str] | None = None,
     replyable_only: bool = False,
@@ -165,6 +188,7 @@ async def discover_reply_targets(
         user_id,
         "search",
         min_followers=min_followers,
+        max_followers=max_followers,
         limit=limit,
         replyable_only=replyable_only,
         topics=",".join(topic_list),
@@ -179,7 +203,13 @@ async def discover_reply_targets(
 
     if settings.x_api_mode == "mock":
         result = DiscoverResult(
-            targets=_mock_discoveries(existing, min_followers, limit),
+            targets=_mock_discoveries(
+                existing,
+                min_followers,
+                limit,
+                max_followers=max_followers,
+                replyable_only=replyable_only,
+            ),
             source="mock",
             message="Mock discovery — connect X and use live API mode for real niche search.",
         )
@@ -232,6 +262,10 @@ async def discover_reply_targets(
             continue
         if tweet.author_followers < min_followers:
             continue
+        if max_followers is not None and tweet.author_followers > max_followers:
+            continue
+        if _looks_like_news_or_promo(tweet.tweet_text):
+            continue
         if not _passes_reply_filter(tweet, replyable_only=replyable_only):
             continue
         if len(tweet.tweet_text.strip()) < 20:
@@ -239,7 +273,7 @@ async def discover_reply_targets(
         tweet.relevance_score = _score_tweet(tweet, topic_list)
         filtered.append(tweet)
 
-    filtered.sort(key=lambda t: (t.relevance_score, t.likes, t.author_followers), reverse=True)
+    filtered.sort(key=lambda t: (t.relevance_score, t.likes), reverse=True)
     unique: list[DiscoveredTweet] = []
     seen: set[str] = set()
     for tweet in filtered:
@@ -252,7 +286,13 @@ async def discover_reply_targets(
 
     if not unique:
         unique = (
-            _mock_discoveries(existing, min_followers, limit, replyable_only=replyable_only)
+            _mock_discoveries(
+                existing,
+                min_followers,
+                limit,
+                max_followers=max_followers,
+                replyable_only=replyable_only,
+            )
             if settings.x_api_mode == "mock"
             else []
         )
@@ -311,7 +351,7 @@ async def discover_from_watchlist(
     client = get_x_client()
 
     if settings.x_api_mode == "mock":
-        mock_targets = _mock_discoveries(existing, 5_000, limit)
+        mock_targets = _mock_discoveries(existing, 5_000, limit, max_followers=None)
         for i, t in enumerate(mock_targets):
             t.author_handle = handles[i % len(handles)]
         result = DiscoverResult(targets=mock_targets, source="watchlist")
@@ -375,7 +415,12 @@ async def discover_from_watchlist(
 
 
 def _mock_discoveries(
-    existing: set[str], min_followers: int, limit: int, *, replyable_only: bool = False
+    existing: set[str],
+    min_followers: int,
+    limit: int,
+    *,
+    max_followers: int | None = DEFAULT_MAX_FOLLOWERS,
+    replyable_only: bool = False,
 ) -> list[DiscoveredTweet]:
     samples = [
         DiscoveredTweet(
@@ -401,29 +446,32 @@ def _mock_discoveries(
         DiscoveredTweet(
             x_tweet_id="9000000000000000003",
             x_user_id="1003",
-            author_handle="kelseyhightower",
-            tweet_text="Kubernetes won't fix a bad system design. What's the hardest distributed systems lesson you learned the hard way?",
-            author_followers=180_000,
+            author_handle="pg_ops",
+            tweet_text="Postgres connection pools hide saturation until p99 latency spikes. What's your early warning signal?",
+            author_followers=18_000,
             likes=85,
             relevance_score=0.88,
+            reply_settings="everyone",
         ),
         DiscoveredTweet(
             x_tweet_id="9000000000000000004",
             x_user_id="1004",
             author_handle="abndrsn",
             tweet_text="If your AI feature can't fail gracefully, it's not production-ready yet. Curious how teams are testing retrieval failures.",
-            author_followers=95_000,
+            author_followers=22_000,
             likes=31,
             relevance_score=0.86,
+            reply_settings="everyone",
         ),
         DiscoveredTweet(
             x_tweet_id="9000000000000000005",
             x_user_id="1005",
-            author_handle="mipsytipsy",
+            author_handle="oncall_notes",
             tweet_text="Latency budgets are a product decision, not just an infra decision. Who owns yours?",
-            author_followers=140_000,
+            author_followers=35_000,
             likes=54,
             relevance_score=0.84,
+            reply_settings="everyone",
         ),
     ]
     out: list[DiscoveredTweet] = []
@@ -431,6 +479,8 @@ def _mock_discoveries(
         if tweet.x_tweet_id in existing:
             continue
         if tweet.author_followers < min_followers:
+            continue
+        if max_followers is not None and tweet.author_followers > max_followers:
             continue
         if not _passes_reply_filter(tweet, replyable_only=replyable_only):
             continue

@@ -47,7 +47,8 @@ class DiscoveredReplyTarget(BaseModel):
 
 
 class DiscoverReplyTargetsRequest(BaseModel):
-    min_followers: int = Field(default=10_000, ge=1000, le=5_000_000)
+    min_followers: int = Field(default=2_000, ge=1000, le=5_000_000)
+    max_followers: int | None = Field(default=50_000, ge=1000, le=5_000_000)
     limit: int = Field(default=10, ge=1, le=25)
     topics: list[str] | None = None
 

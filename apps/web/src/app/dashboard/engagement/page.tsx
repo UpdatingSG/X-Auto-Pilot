@@ -93,7 +93,8 @@ export default function EngagementPage() {
     setMessage(null);
     try {
       const result = await api.discoverReplyTargets(token, {
-        min_followers: 10_000,
+        min_followers: 2_000,
+        max_followers: 50_000,
         limit: 10,
       });
       setDiscovered(result.targets);
