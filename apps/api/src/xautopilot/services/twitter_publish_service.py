@@ -8,12 +8,16 @@ from xautopilot.config import settings
 from xautopilot.models.content import Draft, DraftVariant
 from xautopilot.models.published_post import PublishedPost
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
+from xautopilot.services.reply_eligibility_service import (
+    humanize_x_reply_error,
+    should_fallback_reply_to_quote,
+)
 from xautopilot.services.reply_target_service import (
     ReplyTargetNotFoundError,
     get_reply_target,
+    target_can_reply,
     target_is_publishable,
 )
-from xautopilot.services.reply_eligibility_service import humanize_x_reply_error
 from xautopilot.services.metrics_sync_service import schedule_metrics_sync_jobs
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import (
@@ -225,9 +229,15 @@ async def publish_draft(
                 "Re-import the post via URL on the Engagement page, or add the tweet ID from the post URL."
             )
 
-        # X blocks stranger replies; native quote_tweet_id needs Enterprise API — use link quote.
-        used_quote_fallback = True
+        # Prefer native reply ($0.015). Link-quote ($0.20) only when replies are blocked.
+        used_quote_fallback = False
         author_handle = reply_target.author_handle if reply_target else None
+        can_try_native = reply_target is None or target_can_reply(reply_target)
+
+        async def _post_native_reply(access_token: str):
+            return await client.post_reply(
+                access_token, text, in_reply_to_tweet_id=str(in_reply_to)
+            )
 
         async def _post_link_quote(access_token: str):
             return await client.post_quote_tweet(
@@ -238,7 +248,23 @@ async def publish_draft(
             )
 
         try:
-            result = await _publish_with_client(session, user_id, client, _post_link_quote)
+            if can_try_native:
+                try:
+                    result = await _publish_with_client(
+                        session, user_id, client, _post_native_reply
+                    )
+                except (XPublishForbiddenError, XPublishError) as exc:
+                    if not should_fallback_reply_to_quote(str(exc)):
+                        raise
+                    used_quote_fallback = True
+                    result = await _publish_with_client(
+                        session, user_id, client, _post_link_quote
+                    )
+            else:
+                used_quote_fallback = True
+                result = await _publish_with_client(
+                    session, user_id, client, _post_link_quote
+                )
         except (XPublishForbiddenError, XPublishError) as exc:
             raise XPublishForbiddenError(
                 f"X blocked publishing this engagement post: {exc}. "
@@ -247,8 +273,12 @@ async def publish_draft(
 
         root_tweet_id = result.x_tweet_id
         metadata = draft.generation_metadata or {}
-        metadata["published_as_quote_fallback"] = True
-        metadata["quote_tweet_id"] = str(in_reply_to)
+        if used_quote_fallback:
+            metadata["published_as_quote_fallback"] = True
+            metadata["quote_tweet_id"] = str(in_reply_to)
+        else:
+            metadata.pop("published_as_quote_fallback", None)
+            metadata["published_as_native_reply"] = True
         draft.generation_metadata = metadata
     elif draft.content_type == "quote_tweet":
         text = preview

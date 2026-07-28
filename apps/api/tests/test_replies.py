@@ -181,7 +181,72 @@ async def test_publish_reply_draft(client: AsyncClient):
     response = await client.post(f"/v1/publish/{draft['id']}", headers=headers)
 
     assert response.status_code == 200
+    assert response.json()["content_type"] == "reply"
+
+
+async def test_publish_reply_falls_back_to_quote_when_native_blocked(
+    client: AsyncClient, monkeypatch
+):
+    from xautopilot.services.x_client import TweetPostResult, XApiError
+
+    headers = await _setup_creator(client)
+    target = (
+        await client.post(
+            "/v1/reply-targets",
+            json={
+                "author_handle": "levelsio",
+                "tweet_text": "Ship fast, iterate faster.",
+                "x_tweet_id": "1111222233",
+            },
+            headers=headers,
+        )
+    ).json()
+    draft = (
+        await client.post(
+            "/v1/drafts/generate",
+            json={"reply_target_id": target["id"]},
+            headers=headers,
+        )
+    ).json()
+    variant_id = draft["variants"][0]["id"]
+    await client.patch(
+        f"/v1/drafts/{draft['id']}",
+        json={"status": "approved", "selected_variant_id": variant_id},
+        headers=headers,
+    )
+    await client.post(f"/v1/drafts/{draft['id']}/schedule", json={}, headers=headers)
+    await connect_x_account(client, headers)
+
+    class FallbackClient:
+        def __init__(self):
+            self.reply_attempts = 0
+            self.quote_attempts = 0
+
+        async def post_reply(self, access_token: str, text: str, *, in_reply_to_tweet_id: str):
+            self.reply_attempts += 1
+            raise XApiError(
+                "You have not been mentioned by this Tweet author and thus are not allowed to reply",
+                status_code=403,
+            )
+
+        async def post_quote_tweet(
+            self, access_token: str, text: str, *, quote_tweet_id: str, author_handle: str | None = None
+        ):
+            self.quote_attempts += 1
+            return TweetPostResult(x_tweet_id="999888777")
+
+    fake = FallbackClient()
+    monkeypatch.setattr(
+        "xautopilot.services.twitter_publish_service.get_x_client",
+        lambda: fake,
+    )
+
+    response = await client.post(f"/v1/publish/{draft['id']}", headers=headers)
+
+    assert response.status_code == 200
     assert response.json()["content_type"] == "quote_tweet"
+    assert fake.reply_attempts == 1
+    assert fake.quote_attempts == 1
 
 
 async def test_publish_reply_uses_quote_when_reply_blocked(client: AsyncClient, monkeypatch):
@@ -215,21 +280,36 @@ async def test_publish_reply_uses_quote_when_reply_blocked(client: AsyncClient, 
     await client.post(f"/v1/drafts/{draft['id']}/schedule", json={}, headers=headers)
     await connect_x_account(client, headers)
 
+    # Confirmed block: skip native reply and go straight to link-quote.
+    monkeypatch.setattr(
+        "xautopilot.services.twitter_publish_service.target_can_reply",
+        lambda _target: False,
+    )
+
     class QuoteOnlyClient:
+        def __init__(self):
+            self.reply_attempts = 0
+            self.quote_attempts = 0
+
         async def post_quote_tweet(
             self, access_token: str, text: str, *, quote_tweet_id: str, author_handle: str | None = None
         ):
+            self.quote_attempts += 1
             return TweetPostResult(x_tweet_id="999888777")
 
         async def post_reply(self, access_token: str, text: str, *, in_reply_to_tweet_id: str):
+            self.reply_attempts += 1
             raise XApiError("post_reply should not be called", status_code=500)
 
+    fake = QuoteOnlyClient()
     monkeypatch.setattr(
         "xautopilot.services.twitter_publish_service.get_x_client",
-        lambda: QuoteOnlyClient(),
+        lambda: fake,
     )
 
     response = await client.post(f"/v1/publish/{draft['id']}", headers=headers)
 
     assert response.status_code == 200
     assert response.json()["content_type"] == "quote_tweet"
+    assert fake.reply_attempts == 0
+    assert fake.quote_attempts == 1

@@ -10,6 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from xautopilot.config import settings
+from xautopilot.services.discovery_cache_service import (
+    discovery_cache_key,
+    get_cached_discovery,
+    put_cached_discovery,
+)
 from xautopilot.services.reply_eligibility_service import discovered_tweet_is_safe_for_auto_reply
 from xautopilot.models.reply_target import ReplyTarget
 from xautopilot.services.reply_target_service import (
@@ -20,6 +25,18 @@ from xautopilot.services.voice_profile_service import get_active_voice_profile
 from xautopilot.services.x_account_service import XAccountNotFoundError, get_x_account
 from xautopilot.services.x_client import DiscoveredTweet, XApiError, get_x_client
 from xautopilot.services.x_token_service import XAccountNeedsReauthError, get_valid_access_token
+
+
+def _cache_ttl() -> int:
+    return int(settings.discovery_cache_ttl_seconds)
+
+
+def _with_cache_message(result: DiscoverResult, *, from_cache: bool) -> DiscoverResult:
+    if not from_cache:
+        return result
+    note = "Using cached discovery (avoids repeat X API reads)."
+    message = f"{result.message} — {note}" if result.message else note
+    return DiscoverResult(targets=result.targets, source=result.source, message=message)
 
 
 def _passes_reply_filter(tweet: DiscoveredTweet, *, replyable_only: bool) -> bool:
@@ -132,6 +149,7 @@ async def discover_reply_targets(
     limit: int = 10,
     topics: list[str] | None = None,
     replyable_only: bool = False,
+    force_refresh: bool = False,
 ) -> DiscoverResult:
     voice = await get_active_voice_profile(session, user_id)
     if topics:
@@ -143,15 +161,32 @@ async def discover_reply_targets(
     else:
         topic_list = DEFAULT_TOPICS
 
+    cache_key = discovery_cache_key(
+        user_id,
+        "search",
+        min_followers=min_followers,
+        limit=limit,
+        replyable_only=replyable_only,
+        topics=",".join(topic_list),
+    )
+    if not force_refresh:
+        cached = get_cached_discovery(cache_key)
+        if cached is not None:
+            return _with_cache_message(cached, from_cache=True)
+
     existing = await _existing_tweet_ids(session, user_id)
     client = get_x_client()
 
     if settings.x_api_mode == "mock":
-        return DiscoverResult(
+        result = DiscoverResult(
             targets=_mock_discoveries(existing, min_followers, limit),
             source="mock",
             message="Mock discovery — connect X and use live API mode for real niche search.",
         )
+        put_cached_discovery(
+            cache_key, result, ttl_seconds=_cache_ttl(), user_id=user_id, kind="search"
+        )
+        return result
 
     try:
         access_token = await get_valid_access_token(session, user_id)
@@ -229,7 +264,11 @@ async def discover_reply_targets(
             "or use Quote opportunities."
         )
 
-    return DiscoverResult(targets=unique, source=source, message=message)
+    result = DiscoverResult(targets=unique, source=source, message=message)
+    put_cached_discovery(
+        cache_key, result, ttl_seconds=_cache_ttl(), user_id=user_id, kind="search"
+    )
+    return result
 
 
 def _watchlist_handles(voice) -> list[str]:
@@ -248,12 +287,25 @@ async def discover_from_watchlist(
     *,
     limit: int = 10,
     replyable_only: bool = False,
+    force_refresh: bool = False,
 ) -> DiscoverResult:
     """Fetch recent tweets from favorite_creators on the voice profile."""
     voice = await get_active_voice_profile(session, user_id)
     handles = _watchlist_handles(voice) if voice else []
     if not handles:
         return DiscoverResult(targets=[], source="watchlist", message="Add creators to your watchlist in Voice Profile.")
+
+    cache_key = discovery_cache_key(
+        user_id,
+        "watchlist",
+        limit=limit,
+        replyable_only=replyable_only,
+        handles=",".join(handles),
+    )
+    if not force_refresh:
+        cached = get_cached_discovery(cache_key)
+        if cached is not None:
+            return _with_cache_message(cached, from_cache=True)
 
     existing = await _existing_tweet_ids(session, user_id)
     client = get_x_client()
@@ -262,7 +314,11 @@ async def discover_from_watchlist(
         mock_targets = _mock_discoveries(existing, 5_000, limit)
         for i, t in enumerate(mock_targets):
             t.author_handle = handles[i % len(handles)]
-        return DiscoverResult(targets=mock_targets, source="watchlist")
+        result = DiscoverResult(targets=mock_targets, source="watchlist")
+        put_cached_discovery(
+            cache_key, result, ttl_seconds=_cache_ttl(), user_id=user_id, kind="watchlist"
+        )
+        return result
 
     try:
         access_token = await get_valid_access_token(session, user_id)
@@ -307,11 +363,15 @@ async def discover_from_watchlist(
         if len(unique) >= limit:
             break
 
-    return DiscoverResult(
+    result = DiscoverResult(
         targets=unique,
         source="watchlist",
         message=f"Monitoring {len(handles)} creators from your watchlist.",
     )
+    put_cached_discovery(
+        cache_key, result, ttl_seconds=_cache_ttl(), user_id=user_id, kind="watchlist"
+    )
+    return result
 
 
 def _mock_discoveries(

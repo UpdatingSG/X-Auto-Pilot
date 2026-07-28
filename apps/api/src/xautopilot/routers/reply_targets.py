@@ -84,6 +84,7 @@ async def discover_targets(
             min_followers=data.min_followers,
             limit=data.limit,
             topics=data.topics,
+            force_refresh=True,
         )
     except ReplyDiscoveryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
@@ -100,7 +101,9 @@ async def discover_watchlist_targets(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        result = await discover_from_watchlist(db, current_user.id, limit=10)
+        result = await discover_from_watchlist(
+            db, current_user.id, limit=10, force_refresh=True
+        )
     except ReplyDiscoveryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from None
     return DiscoverReplyTargetsResponse(

@@ -29,7 +29,9 @@ def _quote_score(tweet: DiscoveredTweet) -> float:
 
 async def discover_quote_opportunities(session, user_id, *, limit: int = 5) -> DiscoverResult:
     """Find tweets suitable for quote-tweets with commentary."""
-    result = await discover_reply_targets(session, user_id, min_followers=25_000, limit=limit * 3)
+    result = await discover_reply_targets(
+        session, user_id, min_followers=25_000, limit=limit * 3, force_refresh=True
+    )
     scored: list[DiscoveredTweet] = []
     for tweet in result.targets:
         if tweet.likes < 30:

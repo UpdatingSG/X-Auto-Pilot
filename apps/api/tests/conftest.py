@@ -6,8 +6,16 @@ from xautopilot.config import settings
 from xautopilot.database import Base, get_db
 from xautopilot.main import app
 from xautopilot.models import content, knowledge, llm_usage, metrics_sync_job, oauth_pkce_state, post_metrics, published_post, reply_target, schedule, user, voice_profile, x_account  # noqa: F401
+from xautopilot.services.discovery_cache_service import clear_discovery_cache
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True)
+def _clear_discovery_cache():
+    clear_discovery_cache()
+    yield
+    clear_discovery_cache()
 
 
 @pytest.fixture(autouse=True)

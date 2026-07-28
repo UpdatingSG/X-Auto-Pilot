@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     worker_tick_interval_seconds: int = 60
     worker_manual_tick_enabled: bool = True
     worker_cron_secret: str = ""
+    # Reuse search/watchlist discovery within this window (seconds). Cuts repeat X reads.
+    discovery_cache_ttl_seconds: int = 3600
 
 
 settings = Settings()

@@ -18,9 +18,11 @@ from xautopilot.schemas.briefing import (
     DailyTargets,
 )
 from xautopilot.services.analytics_service import build_reach_hints
+from xautopilot.services.discovery_cache_service import get_latest_cached_discovery
 from xautopilot.services.learning_service import build_weight_hints
 from xautopilot.services.reply_discovery_service import (
     DiscoverResult,
+    _with_cache_message,
     discover_from_watchlist,
     discover_reply_targets,
 )
@@ -77,14 +79,37 @@ async def get_daily_briefing(session: AsyncSession, user_id: UUID) -> BriefingRe
 
     discovery_message: str | None = None
     try:
-        discovery = await discover_reply_targets(session, user_id, limit=8)
+        # Prefer any recent discovery (e.g. after Find & draft) to avoid a second X round-trip.
+        cached_search = get_latest_cached_discovery(user_id, "search")
+        if cached_search is not None:
+            discovery = _with_cache_message(
+                DiscoverResult(
+                    targets=cached_search.targets[:8],
+                    source=cached_search.source,
+                    message=cached_search.message,
+                ),
+                from_cache=True,
+            )
+        else:
+            discovery = await discover_reply_targets(session, user_id, limit=8)
         discovery_message = discovery.message
     except Exception as exc:
         discovery = DiscoverResult(targets=[], source="none", message=str(exc))
         discovery_message = discovery.message
 
     try:
-        watchlist = await discover_from_watchlist(session, user_id, limit=5)
+        cached_watch = get_latest_cached_discovery(user_id, "watchlist")
+        if cached_watch is not None:
+            watchlist = _with_cache_message(
+                DiscoverResult(
+                    targets=cached_watch.targets[:5],
+                    source=cached_watch.source,
+                    message=cached_watch.message,
+                ),
+                from_cache=True,
+            )
+        else:
+            watchlist = await discover_from_watchlist(session, user_id, limit=5)
     except Exception:
         watchlist = DiscoverResult(targets=[], source="none")
 
@@ -208,25 +233,36 @@ async def run_quick_reply_workflow(
     )
     from xautopilot.services.reply_target_service import target_is_publishable
 
-    candidates: list = []
-    watchlist = await discover_from_watchlist(
-        session, user_id, limit=8, replyable_only=True
-    )
-    candidates.extend(watchlist.targets)
-
-    if len(candidates) < limit:
+    async def _collect(*, force_refresh: bool) -> list:
+        found: list = []
+        seen: set[str] = set()
+        watchlist = await discover_from_watchlist(
+            session, user_id, limit=8, replyable_only=True, force_refresh=force_refresh
+        )
+        for tweet in watchlist.targets:
+            if tweet.x_tweet_id not in seen:
+                found.append(tweet)
+                seen.add(tweet.x_tweet_id)
+        if len(found) >= limit:
+            return found
         discovery = await discover_reply_targets(
             session,
             user_id,
             limit=15,
             min_followers=2_000,
             replyable_only=True,
+            force_refresh=force_refresh,
         )
-        seen = {t.x_tweet_id for t in candidates}
         for tweet in discovery.targets:
             if tweet.x_tweet_id not in seen:
-                candidates.append(tweet)
+                found.append(tweet)
                 seen.add(tweet.x_tweet_id)
+        return found
+
+    # Prefer warm cache within TTL; refresh from X only when cache can't fill the batch.
+    candidates = await _collect(force_refresh=False)
+    if len(candidates) < limit:
+        candidates = await _collect(force_refresh=True)
 
     if not candidates:
         return {
