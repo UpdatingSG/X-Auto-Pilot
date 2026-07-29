@@ -5,7 +5,9 @@ function getApiBaseUrl(): string {
   }
   const host = window.location.hostname;
   if (host === "localhost" || host === "127.0.0.1") {
-    return "http://localhost:8000";
+    // Same-origin `/v1/*` → Next.js rewrite (see next.config.ts).
+    // Works for web-only (prototype) against Render, or local API when API_URL points at :8000.
+    return "";
   }
   // Call Render directly from the browser to avoid Vercel rewrite timeouts (ROUTER_EXTERNAL_TARGET_ERROR).
   return "https://xautopilot-api.onrender.com";
@@ -143,6 +145,7 @@ export type Draft = {
   status: string;
   selected_variant_id: string | null;
   scheduled_at: string | null;
+  generation_metadata?: Record<string, unknown>;
   variants: DraftVariant[];
 };
 

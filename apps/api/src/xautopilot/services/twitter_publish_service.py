@@ -254,7 +254,12 @@ async def publish_draft(
                         session, user_id, client, _post_native_reply
                     )
                 except (XPublishForbiddenError, XPublishError) as exc:
-                    if not should_fallback_reply_to_quote(str(exc)):
+                    # Any 403 (XPublishForbiddenError) or known reply-block wording
+                    # → fall back to the link-quote path that worked before native replies.
+                    if not (
+                        isinstance(exc, XPublishForbiddenError)
+                        or should_fallback_reply_to_quote(str(exc))
+                    ):
                         raise
                     used_quote_fallback = True
                     result = await _publish_with_client(

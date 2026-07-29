@@ -22,11 +22,15 @@ def is_x_reply_forbidden_error(message: str) -> bool:
         "not been mentioned" in lower
         or "conversation is not allowed" in lower
         or ("not allowed" in lower and "reply" in lower)
+        # Feb 2026+ API wording (self-serve tiers)
+        or "can only reply" in lower
+        or "mentioned or are the author" in lower
+        or ("where you are mentioned" in lower and "author" in lower)
     )
 
 
 def should_fallback_reply_to_quote(error_message: str) -> bool:
-    """Quote-tweets are not subject to X reply restrictions."""
+    """Link-quotes (normal tweets with a status URL) bypass native reply restrictions."""
     if not error_message.strip():
         return True
     return is_x_reply_forbidden_error(error_message) or "403" in error_message
@@ -37,6 +41,11 @@ def humanize_x_reply_error(message: str, *, reply_settings: str | None = None) -
     settings = str(reply_settings or "").lower()
     if "blocked the quote-tweet" in lower:
         return message
+    if "can only reply" in lower or "mentioned or are the author" in lower:
+        return (
+            "X blocked the native reply via API. "
+            "Publishing as a link-quote (your post + the original URL) instead."
+        )
     if "not been mentioned" in lower or "conversation is not allowed" in lower:
         if settings in ("everyone", ""):
             return (

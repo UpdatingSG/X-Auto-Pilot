@@ -88,3 +88,10 @@ def test_should_fallback_reply_to_quote():
     )
     assert should_fallback_reply_to_quote(raw) is True
     assert should_fallback_reply_to_quote("You are not permitted to create a Tweet") is False
+    # Newer X API restriction wording (must still fall back to link-quote)
+    assert (
+        should_fallback_reply_to_quote(
+            "You can only reply to or quote posts where you are mentioned or are the author."
+        )
+        is True
+    )
