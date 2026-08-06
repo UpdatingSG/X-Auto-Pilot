@@ -14,6 +14,21 @@ const DEFAULT_PROVIDERS = [
   "x_browser",
 ];
 
+/** Phase 1 returns demo/fixture URLs (e.g. x.example) — don't open those as real links. */
+function isRealExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === "example" || host.endsWith(".example") || host === "example.com") {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function ResearchPage() {
   const [topics, setTopics] = useState("fastapi, browser automation, python");
   const [busy, setBusy] = useState(false);
@@ -50,8 +65,9 @@ export default function ResearchPage() {
     <AppShell title="Research">
       <div className="max-w-3xl space-y-6">
         <p className="text-zinc-400">
-          Multi-provider research engine (Phase 1 fixtures / browser mock). Runs
-          collect → dedupe → rank and returns a daily markdown report.
+          Scouts topics across providers, then ranks what to write about. Phase 1
+          uses <span className="text-zinc-300">demo fixture data</span> (not live
+          X/Reddit scrapes) — titles labeled demo won&apos;t open a real page yet.
         </p>
 
         <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
@@ -85,24 +101,36 @@ export default function ResearchPage() {
                 {report.providers_used.join(", ")}
               </h3>
               <ul className="mt-3 space-y-2">
-                {report.discussions.slice(0, 12).map((d) => (
-                  <li key={d.canonical_key} className="text-sm">
-                    <a
-                      href={d.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sky-400 hover:underline"
-                    >
-                      {d.title}
-                    </a>
-                    <span className="ml-2 text-zinc-500">
-                      {d.provider} · score {d.score}
-                    </span>
-                    {d.excerpt && (
-                      <p className="text-zinc-500">{d.excerpt}</p>
-                    )}
-                  </li>
-                ))}
+                {report.discussions.slice(0, 12).map((d) => {
+                  const realLink = isRealExternalUrl(d.url);
+                  return (
+                    <li key={d.canonical_key} className="text-sm">
+                      {realLink ? (
+                        <a
+                          href={d.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-400 hover:underline"
+                        >
+                          {d.title}
+                        </a>
+                      ) : (
+                        <span className="text-zinc-200">{d.title}</span>
+                      )}
+                      <span className="ml-2 text-zinc-500">
+                        {d.provider} · score {d.score}
+                      </span>
+                      {!realLink && (
+                        <span className="ml-2 rounded bg-amber-950/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
+                          demo fixture
+                        </span>
+                      )}
+                      {d.excerpt && (
+                        <p className="text-zinc-500">{d.excerpt}</p>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
 

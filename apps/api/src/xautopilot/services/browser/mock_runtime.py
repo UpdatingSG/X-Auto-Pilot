@@ -22,9 +22,10 @@ class MockBrowserRuntime:
         self._record("search", site, query)
         return [
             PageContent(
-                url=f"https://{site}.example/search?q={query}",
-                title=f"{site} result for {query}",
-                text=f"Discussion about {query} on {site}",
+                # Placeholder only — not a real web URL (UI treats *.example as non-links).
+                url=f"https://{site}.example/fixture/search?q={query}",
+                title=f"[demo] {site} result for {query}",
+                text=f"Fixture discussion about {query} on {site} (not live data).",
             )
         ]
 
