@@ -1,5 +1,19 @@
 # High-Level Architecture
 
+## Browser-first evolution (PRD v2)
+
+As of August 2026, external platforms are abstracted behind **Provider** interfaces. Phase 1 prefers **browser automation** (and public web/feeds) over the X Developer API. Official APIs remain optional adapters.
+
+See [19-BROWSER-FIRST-PRD.md](19-BROWSER-FIRST-PRD.md). Core modules:
+
+- `services/providers/` — platform protocol + registry
+- `services/browser/` — browser runtime (no business logic)
+- `services/research_engine.py` — multi-provider research
+- `services/review_pipeline.py` — detect → humanize → fact-check
+- `services/approval_service.py` — human approval gates
+
+The diagrams below still describe the original X-API-centric target architecture; treat the publisher/X API edges as one provider among many.
+
 ## System Context
 
 ```mermaid

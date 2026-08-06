@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from xautopilot.models.content import Draft
+from xautopilot.services.approval_service import ApprovalError, DraftState, assert_can_schedule
 from xautopilot.services.draft_service import DraftNotFoundError, get_draft
 from xautopilot.services.schedule_service import get_schedule
 from xautopilot.services.slot_allocator import _ensure_utc, allocate_slot
@@ -91,8 +92,17 @@ async def schedule_draft(
 
     if draft.status == "scheduled":
         raise DraftNotSchedulableError
-    if draft.status != "approved":
-        raise DraftNotSchedulableError
+    try:
+        assert_can_schedule(
+            DraftState(
+                status=draft.status,
+                selected_variant_id=str(draft.selected_variant_id)
+                if draft.selected_variant_id
+                else None,
+            )
+        )
+    except ApprovalError as exc:
+        raise DraftNotSchedulableError from exc
 
     schedule = await get_schedule(session, user_id)
     type_group = _content_type_group(draft.content_type)

@@ -56,6 +56,32 @@ export type KnowledgeItem = {
   fetched_at: string;
 };
 
+export type ResearchDiscussion = {
+  provider: string;
+  external_id: string;
+  title: string;
+  url: string;
+  excerpt: string;
+  author: string | null;
+  score: number;
+  comment_count: number;
+  canonical_key: string;
+};
+
+export type ResearchInsight = {
+  summary: string;
+  source_keys: string[];
+};
+
+export type ResearchReport = {
+  run_date: string;
+  topics: string[];
+  discussions: ResearchDiscussion[];
+  insights: ResearchInsight[];
+  markdown: string;
+  providers_used: string[];
+};
+
 export type FetchResult = {
   source_id: string;
   items_ingested: number;
@@ -596,6 +622,16 @@ export const api = {
     request<Draft>(
       "/v1/drafts/generate",
       { method: "POST", body: JSON.stringify({ reply_target_id: replyTargetId }) },
+      token,
+    ),
+
+  runResearch: (
+    token: string,
+    data: { topics: string[]; providers?: string[]; limit_per_query?: number },
+  ) =>
+    request<ResearchReport>(
+      "/v1/research/run",
+      { method: "POST", body: JSON.stringify(data) },
       token,
     ),
 };

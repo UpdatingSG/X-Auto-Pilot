@@ -24,6 +24,8 @@ AI-powered Twitter/X content creation and automation platform. Acts as a persona
 | 16 | [Folder Structure](docs/16-FOLDER_STRUCTURE.md) | Monorepo layout |
 | 17 | [Tech Stack](docs/17-TECH_STACK.md) | Stack justification |
 | 18 | [Roadmap](docs/18-ROADMAP.md) | Implementation milestones |
+| 19 | [Browser-First PRD v2](docs/19-BROWSER-FIRST-PRD.md) | Multi-provider Content OS (browser-first) |
+| — | [v2 issue slices](docs/issues/v2-browser-first-slices.md) | Tracer-bullet implementation tickets |
 
 ## MVP Scope
 

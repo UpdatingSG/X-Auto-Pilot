@@ -1,5 +1,9 @@
 # Product Requirements Document (PRD)
 
+> **August 2026:** Product direction evolved to a browser-first, multi-provider Content OS.  
+> Canonical v2 PRD: [19-BROWSER-FIRST-PRD.md](19-BROWSER-FIRST-PRD.md).  
+> This document remains the historical MVP baseline (M1–M6).
+
 ## 1. Overview
 
 **Product Name:** X-Autopilot  

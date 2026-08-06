@@ -17,6 +17,7 @@ from xautopilot.routers import (
     profile,
     publish,
     reply_targets,
+    research,
     schedule,
     sources,
     worker,
@@ -102,6 +103,7 @@ async def unhandled_exception(_request: Request, exc: Exception):
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(sources.router)
+app.include_router(research.router)
 app.include_router(plans.router)
 app.include_router(reply_targets.router)
 app.include_router(drafts.router)

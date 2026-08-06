@@ -9,6 +9,7 @@ import { clearToken, getToken, getUserEmail, saveUserEmail } from "@/lib/auth";
 
 const navItems = [
   { href: "/dashboard/briefing", label: "★ Daily Briefing" },
+  { href: "/dashboard/research", label: "Research" },
   { href: "/dashboard/drafts", label: "Drafts" },
   { href: "/dashboard/schedule", label: "Publish Queue" },
   { href: "/dashboard/growth", label: "Growth Stats" },
