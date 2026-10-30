@@ -25,7 +25,7 @@ async def get_next_version(session: AsyncSession, user_id: UUID) -> int:
         .limit(1)
     )
     latest = result.scalar_one_or_none()
-    return (latest or 0) + 1
+    return latest or 1
 
 
 async def create_voice_profile(

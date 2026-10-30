@@ -391,7 +391,7 @@ export const api = {
 
   saveVoiceProfile: (token: string, data: Record<string, unknown>) =>
     request<VoiceProfile>(
-      "/v1/profile/voice",
+      "/v1/profile",
       { method: "POST", body: JSON.stringify(data) },
       token,
     ),
